@@ -13,6 +13,8 @@ export class GroqChatService {
   private static instance: GroqChatService;
   private conversationHistory: Map<string, ChatContextMessage[]> = new Map();
   private lastCallTime: Map<string, number> = new Map();
+  private activeModel: string | null = null;
+  private lastModelCheck: number = 0;
 
   private constructor() {}
 
@@ -28,6 +30,69 @@ export class GroqChatService {
    */
   public hasApiKey(customKey?: string): boolean {
     return Boolean(customKey?.trim() || process.env.GROQ_API_KEY?.trim());
+  }
+
+  /**
+   * Discover and cache the active working chat model for the given Groq API Key
+   */
+  private async resolveActiveModel(apiKey: string): Promise<string> {
+    const now = Date.now();
+    if (this.activeModel && (now - this.lastModelCheck < 600000)) {
+      return this.activeModel;
+    }
+
+    if (process.env.GROQ_MODEL) {
+      this.activeModel = process.env.GROQ_MODEL.trim();
+      return this.activeModel;
+    }
+
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/models', {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+        signal: AbortSignal.timeout(4000),
+      });
+
+      if (res.ok) {
+        const data: any = await res.json();
+        const modelIds: string[] = (data?.data || []).map((m: any) => m.id);
+
+        const preferences = [
+          'llama-3.3-70b-versatile',
+          'llama-3.1-8b-instant',
+          'llama3-8b-8192',
+          'llama3-70b-8192',
+          'mixtral-8x7b-32768',
+          'gemma2-9b-it',
+          'openai/gpt-oss-20b',
+        ];
+
+        for (const pref of preferences) {
+          if (modelIds.includes(pref)) {
+            this.activeModel = pref;
+            this.lastModelCheck = now;
+            console.log(`[Groq AI] Discovered active production model: ${pref}`);
+            return pref;
+          }
+        }
+
+        const fallback = modelIds.find((id) =>
+          !id.includes('whisper') && !id.includes('guard') && !id.includes('embed') && !id.includes('vision')
+        );
+        if (fallback) {
+          this.activeModel = fallback;
+          this.lastModelCheck = now;
+          console.log(`[Groq AI] Selected active fallback model: ${fallback}`);
+          return fallback;
+        }
+      }
+    } catch (e: any) {
+      console.warn('[Groq AI] Model auto-discovery failed, using default candidate list:', e?.message);
+    }
+
+    this.activeModel = 'llama-3.3-70b-versatile';
+    return this.activeModel;
   }
 
   /**
@@ -84,53 +149,80 @@ RULES:
 
       const messages: ChatContextMessage[] = [systemPrompt, ...history, userPrompt];
 
-      // Groq OpenAI-compatible Chat Completions API
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'llama-3.1-8b-instant',
-          messages,
-          max_tokens: 60,
-          temperature: 0.75,
-          top_p: 0.9,
-        }),
-      });
+      // Assemble prioritized models to try in case of 404/model_not_found
+      const preferredModel = await this.resolveActiveModel(apiKey);
+      const candidates = Array.from(new Set([
+        preferredModel,
+        'llama-3.3-70b-versatile',
+        'llama-3.1-8b-instant',
+        'llama3-8b-8192',
+        'llama3-70b-8192',
+        'mixtral-8x7b-32768',
+      ]));
 
-      if (!response.ok) {
-        const status = response.status;
-        let errorDetail = '';
+      let lastErrorStatus = 0;
+      let rawReply: string | null = null;
+
+      for (const modelToTry of candidates) {
         try {
-          const errJson: any = await response.json();
-          errorDetail = errJson?.error?.message || '';
-        } catch {
-          errorDetail = await response.text();
-        }
-        console.error(`[Groq AI] API error (${status}):`, errorDetail);
+          const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              model: modelToTry,
+              messages,
+              max_tokens: 60,
+              temperature: 0.75,
+              top_p: 0.9,
+            }),
+          });
 
-        if (status === 401) {
-          return `[AI Error] Invalid GROQ_API_KEY! Please verify your key in Render or dashboard settings.`;
+          if (response.ok) {
+            const data: any = await response.json();
+            rawReply = data?.choices?.[0]?.message?.content;
+            if (rawReply) {
+              this.activeModel = modelToTry;
+              break;
+            }
+          }
+
+          lastErrorStatus = response.status;
+          let errorDetail = '';
+          try {
+            const errJson: any = await response.json();
+            errorDetail = errJson?.error?.message || '';
+          } catch {
+            errorDetail = await response.text();
+          }
+
+          console.warn(`[Groq AI] Model "${modelToTry}" failed with status ${response.status}: ${errorDetail}`);
+
+          // If 404 (model not found / deprecated), immediately continue to next candidate
+          if (response.status === 404) {
+            this.activeModel = null;
+            continue;
+          }
+
+          // If auth or rate limit error, break early (model change won't fix this)
+          if (response.status === 401) {
+            return `[AI Error] Invalid GROQ_API_KEY! Please verify your key in Render or dashboard settings.`;
+          }
+          if (response.status === 429) {
+            return `[AI Busy] Groq rate limit reached! Please wait a moment before chatting again.`;
+          }
+        } catch (callErr: any) {
+          console.warn(`[Groq AI] Attempt with "${modelToTry}" threw:`, callErr?.message);
         }
-        if (status === 429) {
-          return `[AI Busy] Groq rate limit reached! Please wait a moment before asking again.`;
-        }
-        if (status === 400) {
-          return `[AI Error] Groq API rejected request. Try asking in simpler terms.`;
-        }
-        if (status >= 500) {
-          return `[AI Offline] Groq Cloud AI is currently experiencing downtime. Try again shortly!`;
-        }
-        return `[AI Error] Groq service error (${status}). Please retry in a few moments.`;
       }
 
-      const data: any = await response.json();
-      const rawReply = data?.choices?.[0]?.message?.content;
-
       if (!rawReply || typeof rawReply !== 'string') {
-        return `[AI Error] Received empty response from Groq AI.`;
+        if (lastErrorStatus === 404) {
+          return `[AI Error] None of the Groq chat models responded. Please verify model permissions on your Groq key.`;
+        }
+        return `[AI Error] Groq AI service unavailable (${lastErrorStatus || 'timed out'}). Please retry in a few moments.`;
       }
 
       // Sanitize response for safe Minecraft chat

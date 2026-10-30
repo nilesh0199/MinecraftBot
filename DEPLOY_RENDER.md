@@ -55,9 +55,9 @@ Render's free tier spins down after 15 minutes of inactivity. Pinging `/health` 
 4. In your Render Dashboard $\to$ **Environment** $\to$ Add `GROQ_API_KEY = gsk_...`.
 5. Render will restart the service with the new key in ~20 seconds.
 6. Now in Minecraft chat:
-   * Anyone can type: `!ask what level should I mine for diamonds?`
+   * Anyone can type: `!chat what level should I mine for diamonds?`
    * Or mention: `@AFKBOT tell me a funny joke!`
-   * CraftBot responds dynamically via **Llama-3.1-8b-instant** in **~200ms**!
+   * CraftBot responds dynamically via **Llama 3 (Groq LPU)** in **~200ms**!
 
 ---
 
@@ -69,7 +69,7 @@ Render's free tier spins down after 15 minutes of inactivity. Pinging `/health` 
 | `!sleep` / `!bed` | Public | Scans for nearest bed (24 blocks), walks to it, and sleeps |
 | `!wake` / `!wakeup` | Public | Wakes the bot up from bed |
 | `!nightskip` / `!nap` | Public | Disconnects for 60s so players can sleep, then auto-rejoins |
-| `!ask <question>` | Public | Asks the Groq AI Companion a question |
+| `!chat <message>` | Public | Queries the Groq AI Companion (alias: `!ask`) |
 | `@{bot}` / `!hi` | Public | Greets the bot or chats with AI |
 | `!follow` / `!come` | Public | Follows the player calling the bot |
 | `!stop` / `!halt` | Public | Stops following and stays in place |
