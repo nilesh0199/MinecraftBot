@@ -145,12 +145,44 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
     };
   }, [userProfile, sessionToken]);
 
+  // Auto-rejoin if bot was previously active before Render redeploy/restart
+  useEffect(() => {
+    if (!socket || botState.status !== 'offline') return;
+
+    const timer = setTimeout(() => {
+      try {
+        const savedSession = localStorage.getItem('craftbot_auto_spawn');
+        if (savedSession && botState.status === 'offline' && !isLaunching) {
+          const config = JSON.parse(savedSession);
+          if (config && config.serverIp && config.username) {
+            console.log(`[Auto-Rejoin] Server restarted. Automatically rejoining ${config.username} into ${config.serverIp}...`);
+            setIsLaunching(true);
+            socket.emit('start-bot', {
+              ...config,
+              ownerIgn: userProfile.ownerIgn || config.ownerIgn,
+            });
+          }
+        }
+      } catch (e) {}
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [socket, botState.status, isLaunching, userProfile.ownerIgn]);
+
   // Launch Bot Handler
   const handleLaunchBot = async (config: BotLaunchConfig) => {
     if (!socket) return;
     setIsLaunching(true);
     setServerAlert(null);
     sounds.playClick();
+
+    // Persist session locally so dashboard auto-rejoins bot on any future server reboot/redeploy
+    try {
+      localStorage.setItem('craftbot_auto_spawn', JSON.stringify({
+        ...config,
+        ownerIgn: userProfile.ownerIgn,
+      }));
+    } catch (e) {}
 
     // Save recent bot username and server IP to Firebase
     try {
@@ -260,6 +292,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
   const handleChangeUsername = (newUsername: string) => {
     sounds.playClick();
     socket?.emit('change-bot-username', newUsername);
+    try {
+      const raw = localStorage.getItem('craftbot_auto_spawn');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        parsed.username = newUsername;
+        localStorage.setItem('craftbot_auto_spawn', JSON.stringify(parsed));
+      }
+    } catch (e) {}
     if (userProfile?.uid && botState.serverIp) {
       recordBotUsage(userProfile.uid, newUsername, `${botState.serverIp}:${botState.serverPort}`).catch(() => {});
     }
@@ -278,6 +318,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
   const handleDisconnectBot = () => {
     sounds.playClick();
     if (confirm('Disconnect bot from the Minecraft server and return to launcher?')) {
+      try {
+        localStorage.removeItem('craftbot_auto_spawn');
+      } catch (e) {}
       socket?.emit('stop-bot');
       setBotState((prev) => ({
         ...prev,
@@ -291,6 +334,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
   const handleDisconnectAndSwitch = () => {
     sounds.playClick();
     if (confirm(`Disconnect ${botState.username} from ${botState.serverIp} and switch bot/server?`)) {
+      try {
+        localStorage.removeItem('craftbot_auto_spawn');
+      } catch (e) {}
       socket?.emit('stop-bot');
       setBotState((prev) => ({
         ...prev,

@@ -54,6 +54,28 @@ class BotManager {
     getBot(userId) {
         return this.bots.get(userId);
     }
+    findBotByOwner(ownerIgn) {
+        if (!ownerIgn)
+            return undefined;
+        const lower = ownerIgn.toLowerCase();
+        for (const bot of this.bots.values()) {
+            if (bot.config.ownerIgn && bot.config.ownerIgn.toLowerCase() === lower) {
+                return bot;
+            }
+        }
+        return undefined;
+    }
+    reassignBotUser(bot, newUserId) {
+        const oldUserId = bot.userId;
+        if (oldUserId === newUserId)
+            return;
+        console.log(`[BotManager] Reassigning bot ${bot.config.username} from user ${oldUserId} to ${newUserId}`);
+        this.bots.delete(oldUserId);
+        this.removeBotFromPersistence(oldUserId);
+        bot.userId = newUserId;
+        this.bots.set(newUserId, bot);
+        this.saveBotToPersistence(newUserId, bot.config);
+    }
     getActiveBotsCount() {
         return this.bots.size;
     }
@@ -193,6 +215,27 @@ class BotManager {
     async restoreSavedBots() {
         const saved = this.loadPersistedBots();
         if (saved.length === 0) {
+            // Check if environment variables specify a 24/7 cloud server to maintain
+            const envHost = process.env.MC_SERVER_IP || process.env.DEFAULT_SERVER_IP;
+            if (envHost) {
+                const envPort = parseInt(process.env.MC_SERVER_PORT || process.env.DEFAULT_SERVER_PORT || '25565', 10);
+                const envUsername = process.env.MC_BOT_USERNAME || process.env.DEFAULT_BOT_USERNAME || 'Bot';
+                const envOwner = process.env.MC_OWNER_IGN || process.env.DEFAULT_OWNER_IGN || 'Naya_hu';
+                console.log(`[BotManager] Auto-restoring 24/7 cloud environment bot: ${envUsername} -> ${envHost}:${envPort}`);
+                const defaultUserId = 'cloud-default-session';
+                const defaultConfig = {
+                    username: envUsername,
+                    serverIp: envHost,
+                    serverPort: envPort,
+                    ownerIgn: envOwner,
+                    autoEat: true,
+                    antiAfk: true,
+                    autoAttack: false,
+                    isAiChatActive: true,
+                };
+                this.saveBotToPersistence(defaultUserId, defaultConfig);
+                this.spawnInternal(defaultUserId, defaultConfig);
+            }
             return;
         }
         console.log(`[BotManager] Auto-restoring ${saved.length} active bot session(s) from previous run...`);
