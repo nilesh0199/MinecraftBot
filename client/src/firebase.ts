@@ -26,7 +26,7 @@ export interface UserProfile {
   ownerIgn: string; // Authorized player Minecraft username
   recentBotNames: string[]; // Max 3 items
   recentServerIp: string;
-  recentServerIps?: string[]; // Max 3 recent server addresses
+  recentServerIps?: string[]; // Max 10 recent server addresses
   createdAt?: number;
   updatedAt?: number;
 }
@@ -168,11 +168,11 @@ export async function recordBotUsage(uid: string, botName: string, serverIp: str
   const filteredNames = (current.recentBotNames || []).filter(name => name.toLowerCase() !== botName.toLowerCase());
   const updatedBotNames = [botName, ...filteredNames].slice(0, 3);
 
-  // Clean out any legacy localhost defaults
+  // Clean out any legacy localhost defaults and keep up to 10 servers
   const existingServers = (current.recentServerIps || (current.recentServerIp ? [current.recentServerIp] : []))
     .filter(ip => ip && !ip.toLowerCase().startsWith('localhost'));
   const filteredServers = existingServers.filter(ip => ip.toLowerCase() !== trimmedIp.toLowerCase());
-  const updatedServers = [trimmedIp, ...filteredServers].slice(0, 3);
+  const updatedServers = [trimmedIp, ...filteredServers].slice(0, 10);
 
   const updated: UserProfile = {
     ...current,

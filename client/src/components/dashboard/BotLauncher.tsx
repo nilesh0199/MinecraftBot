@@ -13,6 +13,14 @@ export interface BotLaunchConfig {
   autoAttack: boolean;
 }
 
+const POPULAR_SERVER_PRESETS = [
+  'ChoduCID-7CAj.aternos.me:16808',
+  'donutsmp.net',
+  'play.hypixel.net',
+  'herobrine.org',
+  'pika.host',
+];
+
 interface BotLauncherProps {
   uid?: string;
   recentBotNames: string[];
@@ -46,7 +54,7 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
     : '';
   const [serverAddress, setServerAddress] = useState(initialAddress);
   const [authPassword, setAuthPassword] = useState('');
-  const [version, setVersion] = useState('auto');
+  const [version, setVersion] = useState('1.21.11');
   const [autoEat, setAutoEat] = useState(true);
   const [antiAfk, setAntiAfk] = useState(true);
   const [autoAttack, setAutoAttack] = useState(false);
@@ -280,6 +288,26 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
           <p className="text-[11px] text-slate-500 mt-1">
             Enter your server address. Defaults to port 25565 if omitted.
           </p>
+
+          {/* Quick Presets for Popular Minecraft Servers */}
+          <div className="flex items-center gap-1.5 flex-wrap mt-2 pt-1 border-t border-mc-border/50">
+            <span className="text-[10px] font-mono text-slate-500 uppercase">Presets:</span>
+            {POPULAR_SERVER_PRESETS.map((preset) => (
+              <button
+                type="button"
+                key={preset}
+                onClick={() => setServerAddress(preset)}
+                className={`px-2 py-0.5 text-[10px] font-mono rounded border transition-colors cursor-pointer ${
+                  serverAddress === preset
+                    ? 'border-mc-green bg-mc-green/20 text-mc-green font-bold'
+                    : 'border-slate-800 bg-[#14151e] hover:border-slate-600 text-slate-400 hover:text-slate-200'
+                }`}
+                title={`Click to fill ${preset}`}
+              >
+                + {preset}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Optional AuthMe Password */}
@@ -309,8 +337,8 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
             onChange={(e) => setVersion(e.target.value)}
             className="w-full bg-[#121318] border border-mc-border px-3 py-2 text-xs text-slate-200 rounded focus:border-mc-green focus:outline-none font-mono cursor-pointer"
           >
-            <option value="auto">Auto-Negotiate (Instant Aternos 1.21.11 / Latest)</option>
-            <option value="1.21.11">1.21.11 (Aternos 1.21.11 / Protocol 774)</option>
+            <option value="1.21.11">1.21.11 (Recommended - Aternos 1.21.11 & Protocol 774)</option>
+            <option value="auto">Auto-Negotiate (Auto-Detect Version)</option>
             <option value="1.21.1">1.21.1</option>
             <option value="1.21">1.21</option>
             <option value="1.20.4">1.20.4</option>
