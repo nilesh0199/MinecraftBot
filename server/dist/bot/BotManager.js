@@ -1,11 +1,47 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BotManager = void 0;
 const BotInstance_1 = require("./BotInstance");
 const validator_1 = require("../security/validator");
 const watchdog_1 = require("../security/watchdog");
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
 const MAX_GLOBAL_BOTS = 10;
 const rateLimiter = new validator_1.RateLimiter();
+const PERSISTENCE_FILE = path.resolve(process.cwd(), 'active_bots.json');
 class BotManager {
     bots = new Map();
     io;
@@ -20,6 +56,15 @@ class BotManager {
     }
     getActiveBotsCount() {
         return this.bots.size;
+    }
+    /**
+     * Internal spawn method without rate limit checks (used by startBot and restoreSavedBots)
+     */
+    spawnInternal(userId, config) {
+        const botInstance = new BotInstance_1.BotInstance(userId, config, this.io);
+        this.bots.set(userId, botInstance);
+        botInstance.start();
+        return botInstance;
     }
     startBot(userId, config) {
         // 1. Rate Limiting: 1 spawn request every 8 seconds per user
@@ -44,9 +89,8 @@ class BotManager {
             this.bots.delete(userId);
         }
         try {
-            const botInstance = new BotInstance_1.BotInstance(userId, config, this.io);
-            this.bots.set(userId, botInstance);
-            botInstance.start();
+            this.spawnInternal(userId, config);
+            this.saveBotToPersistence(userId, config);
             return { success: true };
         }
         catch (err) {
@@ -59,6 +103,7 @@ class BotManager {
             existing.stop();
             this.bots.delete(userId);
         }
+        this.removeBotFromPersistence(userId);
     }
     stopAll() {
         console.log(`[BotManager] Gracefully shutting down ${this.bots.size} active bots...`);
@@ -69,6 +114,98 @@ class BotManager {
             catch (e) { }
         }
         this.bots.clear();
+    }
+    /**
+     * Persistence: Save active bot configuration to disk
+     */
+    saveBotToPersistence(userId, config) {
+        try {
+            let store = {};
+            if (fs.existsSync(PERSISTENCE_FILE)) {
+                try {
+                    store = JSON.parse(fs.readFileSync(PERSISTENCE_FILE, 'utf8'));
+                }
+                catch {
+                    store = {};
+                }
+            }
+            store[userId] = {
+                userId,
+                config,
+                savedAt: Date.now(),
+            };
+            fs.writeFileSync(PERSISTENCE_FILE, JSON.stringify(store, null, 2), 'utf8');
+        }
+        catch (err) {
+            console.error('[BotManager] Failed to persist bot state:', err);
+        }
+    }
+    /**
+     * Persistence: Remove bot configuration from disk when user explicitly stops/disconnects
+     */
+    removeBotFromPersistence(userId) {
+        try {
+            if (!fs.existsSync(PERSISTENCE_FILE))
+                return;
+            const raw = fs.readFileSync(PERSISTENCE_FILE, 'utf8');
+            const store = JSON.parse(raw);
+            if (store[userId]) {
+                delete store[userId];
+                fs.writeFileSync(PERSISTENCE_FILE, JSON.stringify(store, null, 2), 'utf8');
+            }
+        }
+        catch (err) {
+            console.error('[BotManager] Failed to remove bot from persistence:', err);
+        }
+    }
+    /**
+     * Persistence: Load valid persisted bot configurations
+     */
+    loadPersistedBots() {
+        try {
+            if (!fs.existsSync(PERSISTENCE_FILE)) {
+                return [];
+            }
+            const raw = fs.readFileSync(PERSISTENCE_FILE, 'utf8');
+            const store = JSON.parse(raw);
+            const now = Date.now();
+            const MAX_AGE_MS = 48 * 60 * 60 * 1000; // 48 hours
+            return Object.values(store).filter((item) => {
+                return item && item.userId && item.config && (now - item.savedAt < MAX_AGE_MS);
+            });
+        }
+        catch (err) {
+            console.error('[BotManager] Failed to read active_bots.json:', err);
+            return [];
+        }
+    }
+    /**
+     * Persistence: Automatically restore running bots after server crash or Render reboot
+     */
+    async restoreSavedBots() {
+        const saved = this.loadPersistedBots();
+        if (saved.length === 0) {
+            return;
+        }
+        console.log(`[BotManager] Auto-restoring ${saved.length} active bot session(s) from previous run...`);
+        saved.forEach((item, index) => {
+            // Stagger restarts by 2.5 seconds to avoid network/CPU spikes
+            setTimeout(() => {
+                if (this.bots.has(item.userId))
+                    return;
+                if (this.bots.size >= MAX_GLOBAL_BOTS) {
+                    console.warn(`[BotManager] Cannot restore bot for ${item.userId}: capacity reached.`);
+                    return;
+                }
+                console.log(`[BotManager] Restoring bot ${item.config.username} for user ${item.userId} (${index + 1}/${saved.length})...`);
+                try {
+                    this.spawnInternal(item.userId, item.config);
+                }
+                catch (err) {
+                    console.error(`[BotManager] Error restoring bot for ${item.userId}:`, err);
+                }
+            }, index * 2500);
+        });
     }
     setupMemoryWatchdog() {
         this.watchdog.start(() => {

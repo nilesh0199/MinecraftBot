@@ -15,18 +15,42 @@ export interface BotState {
   position: { x: number; y: number; z: number };
   ping: number;
   uptimeSeconds: number;
-  error?: string;
+  error?: string | null;
   ownerIgn: string;
+  retryInfo?: {
+    attempt: number;
+    maxAttempts: number;
+    nextRetryAt: number;
+  } | null;
 }
 
 interface HUDProps {
   botState: BotState;
+  onRetryConnect?: () => void;
 }
 
-export const HUD: React.FC<HUDProps> = ({ botState }) => {
+export const HUD: React.FC<HUDProps> = ({ botState, onRetryConnect }) => {
   const [copiedCoords, setCopiedCoords] = useState(false);
   const [damageFlash, setDamageFlash] = useState(false);
+  const [countdown, setCountdown] = useState<number>(0);
   const prevHealthRef = useRef(botState.health);
+
+  // Live countdown timer for reconnection backoff
+  useEffect(() => {
+    if (!botState.retryInfo?.nextRetryAt) {
+      setCountdown(0);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const remaining = Math.max(0, Math.ceil((botState.retryInfo!.nextRetryAt - Date.now()) / 1000));
+      setCountdown(remaining);
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 500);
+    return () => clearInterval(interval);
+  }, [botState.retryInfo?.nextRetryAt]);
 
   // Monitor health drops for damage flash & hurt sound
   useEffect(() => {
@@ -153,6 +177,55 @@ export const HUD: React.FC<HUDProps> = ({ botState }) => {
           <span className="text-mc-diamond font-bold">{botState.ownerIgn || 'Not set'}</span>
         </div>
       </div>
+
+      {/* Offline / Reconnecting Status Banner */}
+      {(botState.status === 'connecting' || botState.error) && (
+        <div
+          className={`p-3.5 rounded border mb-4 flex flex-wrap items-center justify-between gap-3 ${
+            botState.status === 'connecting'
+              ? 'bg-amber-950/60 border-amber-600/70 text-amber-200'
+              : 'bg-red-950/60 border-red-600/70 text-red-200'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <span
+              className={`w-3 h-3 rounded-full inline-block ${
+                botState.status === 'connecting' ? 'bg-amber-400 animate-ping' : 'bg-red-500'
+              }`}
+            />
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-pixel text-xs tracking-wide uppercase">
+                  {botState.status === 'connecting' ? 'Reconnecting to Server' : 'Connection Alert'}
+                </span>
+                {botState.retryInfo && (
+                  <span className="font-mono text-[10px] bg-black/50 px-2 py-0.5 rounded border border-amber-500/30 text-amber-300">
+                    Attempt {botState.retryInfo.attempt}/{botState.retryInfo.maxAttempts}
+                  </span>
+                )}
+              </div>
+              <p className="font-mono text-xs text-slate-200 mt-0.5">
+                {botState.error || (countdown > 0 ? `Reconnecting in ${countdown}s...` : 'Connecting to server...')}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {onRetryConnect && (
+              <button
+                onClick={() => {
+                  sounds.playClick();
+                  onRetryConnect();
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-800 border border-emerald-400 font-pixel text-xs text-emerald-100 rounded shadow-md transition cursor-pointer"
+                title="Immediately reconnect without waiting for timer"
+              >
+                <span>⚡</span> Retry Now
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Stats Grid: Health, Hunger, Coords, Dimension */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

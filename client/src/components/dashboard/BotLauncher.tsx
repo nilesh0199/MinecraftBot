@@ -16,6 +16,7 @@ interface BotLauncherProps {
   recentBotNames: string[];
   recentServerIp: string;
   recentServerIps?: string[];
+  serverAlert?: string | null;
   onLaunch: (config: BotLaunchConfig) => Promise<void>;
   isLaunching: boolean;
   onClose?: () => void;
@@ -25,6 +26,7 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
   recentBotNames = [],
   recentServerIp = '',
   recentServerIps = [],
+  serverAlert,
   onLaunch,
   isLaunching,
   onClose,
@@ -106,6 +108,18 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
           </button>
         )}
       </div>
+
+      {(error || serverAlert) && (
+        <div className="mb-4 p-3 bg-red-950/70 border border-red-600/80 rounded flex items-start gap-2.5 text-xs text-red-200 font-mono">
+          <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-semibold block text-red-300 font-pixel text-[11px] mb-0.5">
+              SERVER OFFLINE / CONNECTION ALERT:
+            </span>
+            <span>{error || serverAlert}</span>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Bot Username with Last 3 Used Pills */}

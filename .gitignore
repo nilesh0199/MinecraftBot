@@ -11,5 +11,7 @@ server/.env
 # Archives & Temporary files
 *.zip
 temp_deploy/
+active_bots.json
+server/active_bots.json
 .DS_Store
 Thumbs.db

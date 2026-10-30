@@ -2,9 +2,18 @@ import { BotInstance, BotConfig } from './BotInstance';
 import { Server as SocketServer } from 'socket.io';
 import { RateLimiter } from '../security/validator';
 import { MemoryWatchdog } from '../security/watchdog';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const MAX_GLOBAL_BOTS = 10;
 const rateLimiter = new RateLimiter();
+const PERSISTENCE_FILE = path.resolve(process.cwd(), 'active_bots.json');
+
+interface PersistedBotData {
+  userId: string;
+  config: BotConfig;
+  savedAt: number;
+}
 
 export class BotManager {
   private bots: Map<string, BotInstance> = new Map();
@@ -23,6 +32,16 @@ export class BotManager {
 
   public getActiveBotsCount(): number {
     return this.bots.size;
+  }
+
+  /**
+   * Internal spawn method without rate limit checks (used by startBot and restoreSavedBots)
+   */
+  private spawnInternal(userId: string, config: BotConfig): BotInstance {
+    const botInstance = new BotInstance(userId, config, this.io);
+    this.bots.set(userId, botInstance);
+    botInstance.start();
+    return botInstance;
   }
 
   public startBot(userId: string, config: BotConfig): { success: boolean; error?: string } {
@@ -51,9 +70,8 @@ export class BotManager {
     }
 
     try {
-      const botInstance = new BotInstance(userId, config, this.io);
-      this.bots.set(userId, botInstance);
-      botInstance.start();
+      this.spawnInternal(userId, config);
+      this.saveBotToPersistence(userId, config);
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err?.message || 'Failed to initialize bot process.' };
@@ -66,6 +84,7 @@ export class BotManager {
       existing.stop();
       this.bots.delete(userId);
     }
+    this.removeBotFromPersistence(userId);
   }
 
   public stopAll() {
@@ -76,6 +95,99 @@ export class BotManager {
       } catch (e) {}
     }
     this.bots.clear();
+  }
+
+  /**
+   * Persistence: Save active bot configuration to disk
+   */
+  private saveBotToPersistence(userId: string, config: BotConfig): void {
+    try {
+      let store: Record<string, PersistedBotData> = {};
+      if (fs.existsSync(PERSISTENCE_FILE)) {
+        try {
+          store = JSON.parse(fs.readFileSync(PERSISTENCE_FILE, 'utf8'));
+        } catch {
+          store = {};
+        }
+      }
+      store[userId] = {
+        userId,
+        config,
+        savedAt: Date.now(),
+      };
+      fs.writeFileSync(PERSISTENCE_FILE, JSON.stringify(store, null, 2), 'utf8');
+    } catch (err) {
+      console.error('[BotManager] Failed to persist bot state:', err);
+    }
+  }
+
+  /**
+   * Persistence: Remove bot configuration from disk when user explicitly stops/disconnects
+   */
+  private removeBotFromPersistence(userId: string): void {
+    try {
+      if (!fs.existsSync(PERSISTENCE_FILE)) return;
+      const raw = fs.readFileSync(PERSISTENCE_FILE, 'utf8');
+      const store: Record<string, PersistedBotData> = JSON.parse(raw);
+      if (store[userId]) {
+        delete store[userId];
+        fs.writeFileSync(PERSISTENCE_FILE, JSON.stringify(store, null, 2), 'utf8');
+      }
+    } catch (err) {
+      console.error('[BotManager] Failed to remove bot from persistence:', err);
+    }
+  }
+
+  /**
+   * Persistence: Load valid persisted bot configurations
+   */
+  private loadPersistedBots(): PersistedBotData[] {
+    try {
+      if (!fs.existsSync(PERSISTENCE_FILE)) {
+        return [];
+      }
+      const raw = fs.readFileSync(PERSISTENCE_FILE, 'utf8');
+      const store: Record<string, PersistedBotData> = JSON.parse(raw);
+      const now = Date.now();
+      const MAX_AGE_MS = 48 * 60 * 60 * 1000; // 48 hours
+
+      return Object.values(store).filter((item) => {
+        return item && item.userId && item.config && (now - item.savedAt < MAX_AGE_MS);
+      });
+    } catch (err) {
+      console.error('[BotManager] Failed to read active_bots.json:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Persistence: Automatically restore running bots after server crash or Render reboot
+   */
+  public async restoreSavedBots(): Promise<void> {
+    const saved = this.loadPersistedBots();
+    if (saved.length === 0) {
+      return;
+    }
+
+    console.log(`[BotManager] Auto-restoring ${saved.length} active bot session(s) from previous run...`);
+
+    saved.forEach((item, index) => {
+      // Stagger restarts by 2.5 seconds to avoid network/CPU spikes
+      setTimeout(() => {
+        if (this.bots.has(item.userId)) return;
+        if (this.bots.size >= MAX_GLOBAL_BOTS) {
+          console.warn(`[BotManager] Cannot restore bot for ${item.userId}: capacity reached.`);
+          return;
+        }
+
+        console.log(`[BotManager] Restoring bot ${item.config.username} for user ${item.userId} (${index + 1}/${saved.length})...`);
+        try {
+          this.spawnInternal(item.userId, item.config);
+        } catch (err) {
+          console.error(`[BotManager] Error restoring bot for ${item.userId}:`, err);
+        }
+      }, index * 2500);
+    });
   }
 
   private setupMemoryWatchdog() {

@@ -109,6 +109,13 @@ io.on('connection', (socket) => {
     socket.on('stop-bot', () => {
         botManager.stopBot(userId);
     });
+    // Event: Retry connection manually
+    socket.on('retry-connect', () => {
+        const existing = botManager.getBot(userId);
+        if (existing) {
+            existing.retryNow();
+        }
+    });
     // Event: Send In-Game Chat / Command with Rate Limiting (max 3 per sec)
     socket.on('send-chat', (text) => {
         const chatRateKey = `chat:${userId}`;
@@ -218,4 +225,6 @@ server.listen(PORT, () => {
     console.log(` CraftBot 24/7 Cloud Manager Running!`);
     console.log(` Server & WebSocket Gateway: http://localhost:${PORT}`);
     console.log(`===============================================`);
+    // Auto-restore any active bots from previous session (e.g. after Render restart or server reboot)
+    botManager.restoreSavedBots();
 });

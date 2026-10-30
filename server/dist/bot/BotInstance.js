@@ -28,6 +28,12 @@ class BotInstance {
     hasAnnouncedSpawn = false;
     lastEmittedChatMessage = { text: '', time: 0 };
     trackedDoors = new Map();
+    // Smart Reconnect & Offline Handling
+    isExplicitlyStopped = false;
+    retryCount = 0;
+    maxRetries = 5;
+    retryTimer = null;
+    nextRetryAt = 0;
     // Automation flags
     isAntiAfkActive = true;
     isAutoEatActive = true;
@@ -72,6 +78,8 @@ class BotInstance {
             return;
         }
         this.status = 'connecting';
+        this.isExplicitlyStopped = false;
+        this.cancelRetryTimer();
         this.lastPacketTime = Date.now();
         this.broadcastState();
         try {
@@ -138,6 +146,8 @@ class BotInstance {
                 this.status = 'online';
                 this.uptimeStart = Date.now();
                 this.errorMessage = null;
+                this.retryCount = 0;
+                this.cancelRetryTimer();
                 // Setup pathfinder movements with anti-cheat safe defaults & door navigation
                 if (this.bot) {
                     const defaultMove = new mineflayer_pathfinder_1.Movements(this.bot);
@@ -243,29 +253,28 @@ class BotInstance {
         this.bot.on('kicked', (reason) => {
             const reasonStr = typeof reason === 'string' ? reason : JSON.stringify(reason);
             console.log(`[Bot ${this.config.username}] Kicked from server:`, reasonStr);
-            this.status = 'offline';
-            this.errorMessage = reasonStr;
             // Check if kick is permanent ban or whitelist rejection
             const isPermanent = validator_1.SecurityValidator.isBanOrPermanentKick(reasonStr);
             if (isPermanent) {
                 console.warn(`[Bot ${this.config.username}] Server issued ban/whitelist kick. Auto-reconnect permanently disabled.`);
+                this.status = 'error';
+                this.errorMessage = `Banned or not whitelisted: ${reasonStr}`;
+                this.isExplicitlyStopped = true;
+                this.cancelRetryTimer();
+                this.broadcastState();
+                this.io.to(this.userId).emit('bot-error', `Kicked: ${reasonStr}`);
+                this.cleanup();
+                return;
             }
-            this.broadcastState();
-            this.io.to(this.userId).emit('bot-error', `Kicked: ${reasonStr}`);
-            this.cleanup();
+            this.handleAutoReconnect(`Kicked: ${reasonStr}`);
         });
         this.bot.on('end', (reason) => {
             console.log(`[Bot ${this.config.username}] Connection ended:`, reason);
-            this.status = 'offline';
-            this.broadcastState();
-            this.cleanup();
+            this.handleAutoReconnect(`Disconnected from server (${reason || 'server closed'})`);
         });
         this.bot.on('error', (err) => {
             console.error(`[Bot ${this.config.username}] Error:`, err);
-            this.status = 'error';
-            this.errorMessage = err.message;
-            this.broadcastState();
-            this.io.to(this.userId).emit('bot-error', err.message);
+            this.handleAutoReconnect(err?.message || 'Connection error');
         });
     }
     /**
@@ -766,13 +775,90 @@ class BotInstance {
             uptimeSeconds,
             error: this.errorMessage,
             ownerIgn: this.config.ownerIgn,
+            retryInfo: this.retryTimer ? {
+                attempt: this.retryCount,
+                maxAttempts: this.maxRetries,
+                nextRetryAt: this.nextRetryAt,
+            } : null,
         };
         this.io.to(this.userId).emit('bot-state', payload);
+    }
+    /**
+     * Handle Disconnection & Offline Server Reconnection with Exponential Backoff
+     */
+    handleAutoReconnect(reason) {
+        this.cleanup();
+        if (this.isExplicitlyStopped) {
+            this.status = 'offline';
+            this.broadcastState();
+            return;
+        }
+        // Avoid duplicate re-entry if a retry timer is already pending
+        if (this.retryTimer) {
+            return;
+        }
+        // Exponential Backoff Intervals: 5s, 15s, 30s, 60s, 120s
+        const retryDelays = [5000, 15000, 30000, 60000, 120000];
+        if (this.retryCount < this.maxRetries) {
+            const delayMs = retryDelays[this.retryCount] || 120000;
+            const seconds = Math.round(delayMs / 1000);
+            this.retryCount++;
+            this.nextRetryAt = Date.now() + delayMs;
+            this.status = 'connecting';
+            this.errorMessage = `Server offline or restarting. Reconnecting in ${seconds}s (Attempt ${this.retryCount}/${this.maxRetries})...`;
+            console.log(`[Bot ${this.config.username}] ${this.errorMessage}`);
+            this.broadcastState();
+            this.retryTimer = setTimeout(() => {
+                this.retryTimer = null;
+                this.nextRetryAt = 0;
+                if (this.isExplicitlyStopped)
+                    return;
+                console.log(`[Bot ${this.config.username}] Auto-reconnect attempt ${this.retryCount}/${this.maxRetries} to ${this.config.serverIp}:${this.config.serverPort}...`);
+                this.start();
+            }, delayMs);
+        }
+        else {
+            // Retries exhausted (server is definitely offline)
+            this.status = 'offline';
+            this.nextRetryAt = 0;
+            this.errorMessage = `Minecraft server is offline (unreachable after ${this.maxRetries} attempts). Click "Retry Now" when server is back up.`;
+            console.warn(`[Bot ${this.config.username}] Max retries reached. Server is offline.`);
+            this.cancelRetryTimer();
+            this.broadcastState();
+            this.io.to(this.userId).emit('server-offline', {
+                serverIp: this.config.serverIp,
+                serverPort: this.config.serverPort,
+                attempts: this.maxRetries,
+            });
+        }
+    }
+    cancelRetryTimer() {
+        if (this.retryTimer) {
+            clearTimeout(this.retryTimer);
+            this.retryTimer = null;
+        }
+        this.nextRetryAt = 0;
+    }
+    /**
+     * User manually triggers immediate reconnection (e.g. from web UI "Retry Now" button)
+     */
+    retryNow() {
+        this.isExplicitlyStopped = false;
+        this.cancelRetryTimer();
+        this.retryCount = 0;
+        this.errorMessage = null;
+        this.nextRetryAt = 0;
+        this.cleanup();
+        this.start();
     }
     /**
      * Clean up and stop bot with complete resource detachment
      */
     stop() {
+        this.isExplicitlyStopped = true;
+        this.cancelRetryTimer();
+        this.retryCount = 0;
+        this.nextRetryAt = 0;
         this.status = 'offline';
         this.cleanup();
         if (this.bot) {

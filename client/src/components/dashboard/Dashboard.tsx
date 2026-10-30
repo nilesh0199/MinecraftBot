@@ -47,6 +47,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
   const [autoEat, setAutoEat] = useState(true);
   const [autoAttack, setAutoAttack] = useState(false);
   const [timerRemaining, setTimerRemaining] = useState<number | null>(null);
+  const [serverAlert, setServerAlert] = useState<string | null>(null);
 
   // Sound toggle handler
   const toggleSound = () => {
@@ -121,7 +122,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
 
     s.on('bot-error', (errorMsg: string) => {
       setIsLaunching(false);
-      alert(`Bot Error: ${errorMsg}`);
+      setServerAlert(errorMsg);
+    });
+
+    s.on('server-offline', (data: { serverIp: string; serverPort: number; attempts: number }) => {
+      setIsLaunching(false);
+      setServerAlert(`Minecraft server at ${data.serverIp}:${data.serverPort} is offline (failed after ${data.attempts} attempts). Click Spawn when your server is back online.`);
     });
 
     setSocket(s);
@@ -135,6 +141,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
   const handleLaunchBot = async (config: BotLaunchConfig) => {
     if (!socket) return;
     setIsLaunching(true);
+    setServerAlert(null);
     sounds.playClick();
 
     // Save recent bot username and server IP to Firebase
@@ -235,6 +242,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
       setChatMessages([]);
       setInventoryItems([]);
     }
+  };
+
+  const handleRetryConnect = () => {
+    sounds.playClick();
+    setServerAlert(null);
+    socket?.emit('retry-connect');
   };
 
   return (
@@ -342,6 +355,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
               recentBotNames={userProfile.recentBotNames || []}
               recentServerIp={userProfile.recentServerIp || 'localhost:25565'}
               recentServerIps={userProfile.recentServerIps || (userProfile.recentServerIp ? [userProfile.recentServerIp] : [])}
+              serverAlert={serverAlert}
               onLaunch={handleLaunchBot}
               isLaunching={isLaunching}
             />
@@ -350,7 +364,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
           /* Bot is online or connecting: Full Live Dashboard */
           <>
             {/* Top HUD: Health, Hunger, Coords, Status */}
-            <HUD botState={botState} />
+            <HUD botState={botState} onRetryConnect={handleRetryConnect} />
 
             {/* Controls & Automation */}
             <ControlPanel
