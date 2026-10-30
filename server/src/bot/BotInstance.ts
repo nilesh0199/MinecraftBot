@@ -113,6 +113,9 @@ export class BotInstance {
     this.lastPacketTime = Date.now();
     this.broadcastState();
 
+    console.log(`[Bot ${this.config.username}] Connecting to ${hostValidation.sanitized}:${portValidation.sanitized}...`);
+    this.emitChatMessage(`Connecting to ${this.config.serverIp}:${this.config.serverPort}...`, undefined, true);
+
     try {
       const botOpts: any = {
         host: hostValidation.sanitized!,
@@ -131,11 +134,26 @@ export class BotInstance {
 
       this.bot = mineflayer.createBot(botOpts);
 
-      // Defensive: Catch low-level client socket errors (e.g. ECONNRESET, broken pipes)
+      // Defensive: Catch low-level client socket errors (e.g. ECONNRESET, broken pipes, ETIMEDOUT)
       const attachClientListeners = (client: any) => {
         if (!client || !client.on) return;
         client.on('error', (err: any) => {
           console.error(`[Bot ${this.config.username} Socket Error Caught]:`, err?.message);
+          const isTimeout = err?.code === 'ETIMEDOUT' || err?.message?.includes('ETIMEDOUT');
+          const isReset = err?.code === 'ECONNRESET' || err?.message?.includes('ECONNRESET');
+          const reason = isTimeout
+            ? 'Connection timed out (Server offline or firewall unreachable)'
+            : isReset
+            ? 'Connection reset (Server offline or restarting)'
+            : (err?.message || 'Socket error');
+          this.handleAutoReconnect(reason);
+        });
+        client.on('connect_allowed', () => {
+          if (client.socket && client.socket.on) {
+            client.socket.on('error', (err: any) => {
+              console.error(`[Bot ${this.config.username} TCP Error Caught]:`, err?.message);
+            });
+          }
         });
         client.on('packet', () => {
           this.lastPacketTime = Date.now();
@@ -202,10 +220,20 @@ export class BotInstance {
       this.broadcastState();
     });
 
+    // 2c. Successful Login Handshake with Server
+    this.bot.on('login', () => {
+      console.log(`[Bot ${this.config.username}] Successfully logged into ${this.config.serverIp}:${this.config.serverPort}! Waiting for world chunks...`);
+      this.emitChatMessage(`✅ Logged into server successfully! Loading world chunks...`, undefined, true);
+      this.status = 'connecting';
+      this.errorMessage = 'Logged in! Loading world chunks...';
+      this.broadcastState();
+    });
+
     // 3. Successful Spawn in World
     this.bot.once('spawn', () => {
       try {
         console.log(`[Bot ${this.config.username}] Successfully spawned in ${this.config.serverIp}!`);
+        this.emitChatMessage(`🌍 Spawned into world! Bot is online and active.`, undefined, true);
         this.status = 'online';
         this.uptimeStart = Date.now();
         this.errorMessage = null;
@@ -419,9 +447,16 @@ export class BotInstance {
       this.handleAutoReconnect(`Disconnected from server (${reason || 'server closed'})`);
     });
 
-    this.bot.on('error', (err) => {
+    this.bot.on('error', (err: any) => {
       console.error(`[Bot ${this.config.username}] Error:`, err);
-      this.handleAutoReconnect(err?.message || 'Connection error');
+      const isTimeout = err?.code === 'ETIMEDOUT' || err?.message?.includes('ETIMEDOUT');
+      const isConnReset = err?.code === 'ECONNRESET' || err?.message?.includes('ECONNRESET');
+      const humanError = isTimeout
+        ? 'Minecraft server is offline or unreachable (Connection timed out).'
+        : isConnReset
+        ? 'Minecraft server connection was reset (Server offline or restarting).'
+        : (err?.message || 'Connection error');
+      this.handleAutoReconnect(humanError);
     });
   }
 
@@ -1469,8 +1504,9 @@ export class BotInstance {
       this.nextRetryAt = Date.now() + delayMs;
 
       this.status = 'connecting';
-      this.errorMessage = `Server offline or restarting. Reconnecting in ${seconds}s (Attempt ${this.retryCount}/${this.maxRetries})...`;
-      console.log(`[Bot ${this.config.username}] ${this.errorMessage}`);
+      this.errorMessage = reason;
+      console.log(`[Bot ${this.config.username}] ${reason}. Reconnecting in ${seconds}s (Attempt ${this.retryCount}/${this.maxRetries})...`);
+      this.emitChatMessage(`⚠️ ${reason} - Reconnecting in ${seconds}s (Attempt ${this.retryCount}/${this.maxRetries})...`, undefined, true);
       this.broadcastState();
 
       this.retryTimer = setTimeout(() => {
@@ -1478,6 +1514,7 @@ export class BotInstance {
         this.nextRetryAt = 0;
         if (this.isExplicitlyStopped) return;
         console.log(`[Bot ${this.config.username}] Auto-reconnect attempt ${this.retryCount}/${this.maxRetries} to ${this.config.serverIp}:${this.config.serverPort}...`);
+        this.emitChatMessage(`🔄 Attempting reconnect to ${this.config.serverIp}:${this.config.serverPort} (Attempt ${this.retryCount}/${this.maxRetries})...`, undefined, true);
         this.start();
       }, delayMs);
     } else {

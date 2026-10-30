@@ -139,14 +139,17 @@ export const HUD: React.FC<HUDProps> = ({ botState, onRetryConnect, onChangeUser
       }`}
     >
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-mc-border pb-3 mb-3">
-        {/* Bot Name and Online Status */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#16171d] border border-mc-border flex items-center justify-center rounded">
-            <span className="text-xl">🤖</span>
+        {/* Bot Name and Online Status - Enhanced Legibility & High-Contrast Typography */}
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 bg-[#16171d] border-2 border-mc-border flex items-center justify-center rounded-lg shadow-md shrink-0">
+            <span className="text-2xl">🤖</span>
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="font-pixel text-xs text-slate-100">{botState.username}</span>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {/* Bot Username - Clear, Large, Readable Sans Font */}
+              <span className="font-sans font-bold text-lg sm:text-xl text-white tracking-tight drop-shadow-sm">
+                {botState.username}
+              </span>
 
               {/* Change Username Button */}
               {onChangeUsername && (
@@ -157,43 +160,53 @@ export const HUD: React.FC<HUDProps> = ({ botState, onRetryConnect, onChangeUser
                     setRenameError(null);
                     setIsRenameModalOpen(true);
                   }}
-                  className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-mc-border bg-[#181922] hover:bg-[#252838] active:bg-[#151620] text-[10px] font-mono text-slate-300 hover:text-white transition cursor-pointer shadow-sm"
-                  title="Change bot username and rejoin server in 10s"
+                  className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-amber-500/40 bg-amber-950/40 hover:bg-amber-900/60 active:bg-amber-950 text-xs font-sans font-medium text-amber-300 hover:text-amber-200 transition cursor-pointer shadow-sm"
+                  title="Change bot username"
                 >
-                  <Edit3 className="w-2.5 h-2.5 text-mc-gold" />
+                  <Edit3 className="w-3 h-3 text-amber-400" />
                   <span>Change</span>
                 </button>
               )}
+
+              {/* Status Badge */}
               <span
-                className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase ${
+                className={`text-xs font-sans font-semibold px-2.5 py-0.5 rounded-full border uppercase tracking-wide flex items-center gap-1.5 ${
                   botState.status === 'online'
-                    ? 'bg-emerald-950/80 text-emerald-400 border-emerald-800'
+                    ? 'bg-emerald-950/90 text-emerald-400 border-emerald-600 shadow-emerald-950/50 shadow'
                     : botState.status === 'connecting'
-                    ? 'bg-amber-950/80 text-amber-400 border-amber-800 animate-pulse'
-                    : 'bg-red-950/80 text-red-400 border-red-800'
+                    ? 'bg-amber-950/90 text-amber-400 border-amber-600 animate-pulse'
+                    : 'bg-red-950/90 text-red-400 border-red-600'
                 }`}
               >
-                ● {botState.status}
+                <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                {botState.status}
               </span>
+
               {botState.isSleeping && (
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded border bg-indigo-950/90 text-indigo-300 border-indigo-700 flex items-center gap-1 animate-pulse">
+                <span className="text-xs font-sans px-2.5 py-0.5 rounded-full border bg-indigo-950/90 text-indigo-300 border-indigo-700 flex items-center gap-1 animate-pulse">
                   <span>🛏️</span> In Bed
                 </span>
               )}
             </div>
-            <div className="text-[11px] font-mono text-slate-400 flex items-center gap-2 mt-0.5">
-              <span>{botState.serverIp ? `${botState.serverIp}:${botState.serverPort}` : 'Ready to Connect'}</span>
-              <span>•</span>
+
+            {/* Server Address & Metrics - Large, High Contrast, Easy to Read */}
+            <div className="font-sans text-xs sm:text-sm text-slate-300 flex items-center gap-2.5 mt-1 flex-wrap">
+              <span className="font-mono text-cyan-300 font-bold bg-[#141824] px-2.5 py-0.5 rounded border border-cyan-500/40 text-xs sm:text-sm tracking-wide shadow-sm">
+                {botState.serverIp ? `${botState.serverIp}:${botState.serverPort}` : 'Ready to Connect'}
+              </span>
+              <span className="text-slate-600">•</span>
               <span
-                className={`flex items-center gap-1 px-1.5 py-0.2 rounded border text-[10px] ${getPingColor(
+                className={`flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono font-medium ${getPingColor(
                   botState.ping
                 )}`}
               >
                 <Wifi className="w-3 h-3" />
                 {botState.ping}ms
               </span>
-              <span>•</span>
-              <span className="text-mc-green font-semibold">Uptime: {uptimeString}</span>
+              <span className="text-slate-600">•</span>
+              <span className="text-emerald-400 font-semibold text-xs sm:text-sm">
+                Uptime: {uptimeString}
+              </span>
             </div>
           </div>
         </div>
@@ -232,9 +245,21 @@ export const HUD: React.FC<HUDProps> = ({ botState, onRetryConnect, onChangeUser
                   </span>
                 )}
               </div>
-              <p className="font-mono text-xs text-slate-200 mt-0.5">
-                {botState.error || (countdown > 0 ? `Reconnecting in ${countdown}s...` : 'Connecting to server...')}
-              </p>
+              <div className="font-sans text-xs text-slate-200 mt-0.5">
+                {countdown > 0 ? (
+                  <span className="flex items-center gap-1.5 flex-wrap">
+                    <span>Reconnecting in</span>
+                    <strong className="text-amber-300 font-bold font-mono px-1.5 py-0.2 bg-black/40 rounded border border-amber-500/30">
+                      {countdown}s
+                    </strong>
+                    {botState.error && !botState.error.includes('Reconnecting in') && (
+                      <span className="text-slate-400 text-[11px]">({botState.error})</span>
+                    )}
+                  </span>
+                ) : (
+                  <span>{botState.error || 'Connecting to server...'}</span>
+                )}
+              </div>
             </div>
           </div>
 

@@ -138,12 +138,19 @@ export class BotManager {
     process.on('SIGTERM', handleExit);
 
     // Global unhandled crash guards to protect the Node process
-    process.on('uncaughtException', (err) => {
-      console.error('[UNCAUGHT EXCEPTION]:', err);
+    process.on('uncaughtException', (err: any) => {
+      console.error('[UNCAUGHT EXCEPTION]:', err?.message || err);
+      // Absorb network socket timeout/reset errors from background bot pings without crashing
+      const isNetError = err?.code === 'ETIMEDOUT' || err?.code === 'ECONNRESET' ||
+        err?.message?.includes('ETIMEDOUT') || err?.message?.includes('ECONNRESET');
+      if (isNetError) {
+        console.warn('[BotManager] Network connection timeout/reset caught and absorbed safely.');
+        return;
+      }
     });
 
-    process.on('unhandledRejection', (reason) => {
-      console.error('[UNHANDLED REJECTION]:', reason);
+    process.on('unhandledRejection', (reason: any) => {
+      console.error('[UNHANDLED REJECTION]:', reason?.message || reason);
     });
   }
 }
