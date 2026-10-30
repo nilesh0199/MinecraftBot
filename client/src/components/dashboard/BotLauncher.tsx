@@ -15,6 +15,7 @@ export interface BotLaunchConfig {
 interface BotLauncherProps {
   recentBotNames: string[];
   recentServerIp: string;
+  recentServerIps?: string[];
   onLaunch: (config: BotLaunchConfig) => Promise<void>;
   isLaunching: boolean;
   onClose?: () => void;
@@ -23,6 +24,7 @@ interface BotLauncherProps {
 export const BotLauncher: React.FC<BotLauncherProps> = ({
   recentBotNames = [],
   recentServerIp = '',
+  recentServerIps = [],
   onLaunch,
   isLaunching,
   onClose,
@@ -35,6 +37,11 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
   const [antiAfk, setAntiAfk] = useState(true);
   const [autoAttack, setAutoAttack] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Compile list of recent server IPs
+  const serverList = recentServerIps.length > 0
+    ? recentServerIps
+    : (recentServerIp ? [recentServerIp] : ['localhost:25565']);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,11 +150,39 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
           />
         </div>
 
-        {/* Server IP Address */}
+        {/* Server IP Address with Recent Servers Quick-Select */}
         <div>
-          <label className="block text-xs font-mono uppercase text-slate-300 mb-1">
-            Server IP & Port
-          </label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs font-mono uppercase text-slate-300">
+              Server IP & Port
+            </label>
+            {serverList.length > 0 && (
+              <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
+                <History className="w-3 h-3 text-slate-400" /> Recent Servers:
+              </span>
+            )}
+          </div>
+
+          {/* Quick Select Pills for Recent Server Addresses */}
+          {serverList.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {serverList.map((addr) => (
+                <button
+                  type="button"
+                  key={addr}
+                  onClick={() => setServerAddress(addr)}
+                  className={`px-2.5 py-1 text-xs font-mono rounded border transition-colors cursor-pointer ${
+                    serverAddress === addr
+                      ? 'bg-mc-diamond/20 border-mc-diamond text-mc-diamond font-bold'
+                      : 'bg-[#14151b] border-mc-border text-slate-300 hover:border-slate-500'
+                  }`}
+                >
+                  {addr}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="relative">
             <input
               type="text"
@@ -159,7 +194,7 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
             <Server className="w-4 h-4 text-slate-500 absolute right-3 top-2.5 pointer-events-none" />
           </div>
           <p className="text-[11px] text-slate-500 mt-1">
-            Remembered across sessions. Defaults to port 25565 if omitted.
+            Select a recent server or enter an address. Defaults to port 25565.
           </p>
         </div>
 

@@ -213,8 +213,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
 
   const handleDisconnectBot = () => {
     sounds.playClick();
-    if (confirm('Disconnect bot from the Minecraft server?')) {
+    if (confirm('Disconnect bot from the Minecraft server and return to launcher?')) {
       socket?.emit('stop-bot');
+      setBotState((prev) => ({
+        ...prev,
+        status: 'offline',
+      }));
+      setChatMessages([]);
+      setInventoryItems([]);
+    }
+  };
+
+  const handleDisconnectAndSwitch = () => {
+    sounds.playClick();
+    if (confirm(`Disconnect ${botState.username} from ${botState.serverIp} and switch bot/server?`)) {
+      socket?.emit('stop-bot');
+      setBotState((prev) => ({
+        ...prev,
+        status: 'offline',
+      }));
+      setChatMessages([]);
+      setInventoryItems([]);
     }
   };
 
@@ -287,6 +306,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
               </button>
             </div>
 
+            {/* Disconnect & Switch Bot / Server Button */}
+            {botState.status !== 'offline' && (
+              <button
+                onClick={handleDisconnectAndSwitch}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-pixel bg-amber-950/50 hover:bg-amber-900/80 border border-amber-600/70 text-amber-300 hover:text-amber-200 rounded shadow-sm transition-all cursor-pointer"
+                title="Disconnect bot and return to launcher while staying logged in"
+              >
+                <LogOut className="w-3.5 h-3.5 text-amber-400 rotate-180" />
+                <span>Disconnect & Switch</span>
+              </button>
+            )}
+
             {/* Logout Button */}
             <button
               onClick={() => {
@@ -310,6 +341,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
             <BotLauncher
               recentBotNames={userProfile.recentBotNames || []}
               recentServerIp={userProfile.recentServerIp || 'localhost:25565'}
+              recentServerIps={userProfile.recentServerIps || (userProfile.recentServerIp ? [userProfile.recentServerIp] : [])}
               onLaunch={handleLaunchBot}
               isLaunching={isLaunching}
             />

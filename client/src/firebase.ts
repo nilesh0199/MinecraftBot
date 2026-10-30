@@ -22,6 +22,7 @@ export interface UserProfile {
   ownerIgn: string; // Authorized player Minecraft username
   recentBotNames: string[]; // Max 3 items
   recentServerIp: string;
+  recentServerIps?: string[]; // Max 3 recent server addresses
   createdAt?: number;
   updatedAt?: number;
 }
@@ -130,13 +131,18 @@ export async function recordBotUsage(uid: string, botName: string, serverIp: str
   const current = await getUserProfile(uid);
   if (!current) return;
 
-  const filtered = (current.recentBotNames || []).filter(name => name.toLowerCase() !== botName.toLowerCase());
-  const updatedBotNames = [botName, ...filtered].slice(0, 3);
+  const filteredNames = (current.recentBotNames || []).filter(name => name.toLowerCase() !== botName.toLowerCase());
+  const updatedBotNames = [botName, ...filteredNames].slice(0, 3);
+
+  const existingServers = current.recentServerIps || (current.recentServerIp ? [current.recentServerIp] : []);
+  const filteredServers = existingServers.filter(ip => ip.toLowerCase() !== serverIp.toLowerCase());
+  const updatedServers = [serverIp, ...filteredServers].slice(0, 3);
 
   const updated: UserProfile = {
     ...current,
     recentBotNames: updatedBotNames,
     recentServerIp: serverIp,
+    recentServerIps: updatedServers,
     updatedAt: Date.now(),
   };
 
