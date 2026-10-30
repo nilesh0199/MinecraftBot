@@ -30,7 +30,7 @@ services:
       - key: MC_SERVER_IP
         value: "ChoduCID-7CAj.aternos.me"
       - key: MC_SERVER_PORT
-        value: "16808"
+        value: "16080"
       - key: MC_BOT_USERNAME
         value: "Bot"
       - key: MC_OWNER_IGN

@@ -184,12 +184,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
       }));
     } catch (e) {}
 
-    // Save recent bot username and server IP to Firebase
-    try {
-      await recordBotUsage(userProfile.uid, config.username, `${config.serverIp}:${config.serverPort}`);
-    } catch (e) {
-      console.error('Failed to record bot usage', e);
-    }
+    // Save recent bot username and server IP to Firebase (non-blocking in background)
+    recordBotUsage(userProfile.uid, config.username, `${config.serverIp}:${config.serverPort}`).catch(() => {});
 
     setAntiAfk(config.antiAfk);
     setAutoEat(config.autoEat);

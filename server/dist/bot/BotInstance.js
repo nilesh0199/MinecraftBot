@@ -95,7 +95,7 @@ class BotInstance {
                 host: hostValidation.sanitized,
                 port: portValidation.sanitized,
                 username: userValidation.sanitized,
-                version: this.config.version || undefined,
+                version: this.config.version || '1.21.1',
                 auth: 'offline', // Cracked server authentication
                 checkTimeoutInterval: 45000, // 45s ping timeout
                 hideErrors: true, // Prevent raw stack traces leaking to stdout
