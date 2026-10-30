@@ -267,7 +267,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             </span>
           </div>
           <p className="text-[10px] text-slate-400 font-mono">
-            Replies to mentions &amp; !ask
+            Replies to mentions &amp; !chat
           </p>
         </div>
       </div>
@@ -334,7 +334,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               <div><code>!sleep</code> (find nearest bed & sleep)</div>
               <div><code>!wake</code> (wake up from bed)</div>
               <div><code>!nightskip</code> (leaves for 1 min so you can sleep, then auto-rejoins)</div>
-              <div><code>!ask &lt;msg&gt;</code> (queries Groq AI companion)</div>
+              <div><code>!chat &lt;msg&gt;</code> (queries Groq AI companion)</div>
               <div><code>!follow</code> / <code>!stop</code> / <code>!status</code></div>
             </div>
           </div>

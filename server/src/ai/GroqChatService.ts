@@ -51,12 +51,9 @@ export class GroqChatService {
     }
     this.lastCallTime.set(botUsername, now);
 
-    // Fallback if no API key is set yet
+    // Notice if no API key is set yet
     if (!apiKey) {
-      if (message.startsWith('!') || message.includes('?')) {
-        return `[AI Notice] GROQ_API_KEY is not configured! Add it to your Render settings to activate my AI brain.`;
-      }
-      return this.getFallbackReply(sender, message, botUsername);
+      return `[AI Notice] GROQ_API_KEY is not set on this instance! Add it to Render Environment settings to enable Llama AI.`;
     }
 
     try {

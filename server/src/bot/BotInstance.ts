@@ -584,7 +584,7 @@ export class BotInstance {
     // 1. HELP / COMMANDS (Available for everyone)
     if (lower === '!help' || lower === '!commands' || lower === '!cmds') {
       this.lastInGameCommandTime = now;
-      this.bot.chat(`[Commands] Public: !help, !sleep, !wake, !nightskip, !ask <msg>, !follow, !stop, !status | Owner (${this.config.ownerIgn}): !rename <Name>, !shutdown bot, !transfer <IGN>, !ai on/off, !dropall, !eat, !attack`);
+      this.bot.chat(`[Commands] Public: !help, !chat <msg>, !sleep, !wake, !nightskip, !follow, !stop, !status | Owner (${this.config.ownerIgn}): !rename <Name>, !shutdown bot, !transfer <IGN>, !ai on/off, !dropall, !eat, !attack`);
       return;
     }
 
@@ -625,7 +625,7 @@ export class BotInstance {
       }
       this.isAiChatActive = true;
       this.broadcastState();
-      this.bot.chat(`[AI] Groq AI Chat Companion enabled! Talk to me with @${this.config.username} or "!ask <question>".`);
+      this.bot.chat(`[AI] Groq AI Chat Companion enabled! Talk to me with @${this.config.username} or "!chat <message>".`);
       return;
     }
 
@@ -641,14 +641,20 @@ export class BotInstance {
       return;
     }
 
-    // 7. AI CHAT QUESTIONS (!ask <question> or !ai <question>)
-    if (lower.startsWith('!ask ') || lower.startsWith('!ai ')) {
+    // 7. AI CHAT QUESTIONS (!chat <message>, with !ask and !ai kept as aliases)
+    if (lower === '!chat' || lower === '!ask') {
+      this.lastInGameCommandTime = now;
+      this.bot.chat(`Usage: !chat <your message or question>`);
+      return;
+    }
+
+    if (lower.startsWith('!chat ') || lower.startsWith('!ask ') || lower.startsWith('!ai ')) {
       this.lastInGameCommandTime = now;
       if (!this.isAiChatActive) {
         this.bot.chat(`[AI] AI companion is currently disabled. Ask owner to enable with "!ai on".`);
         return;
       }
-      const question = trimmed.replace(/^!(ask|ai)\s+/i, '');
+      const question = trimmed.replace(/^!(chat|ask|ai)\s+/i, '');
       this.replyWithAi(sender, question);
       return;
     }

@@ -38,7 +38,7 @@ A full-stack, headless Minecraft AFK bot platform with an authentic **Minecraft-
 * **Auto-Wipe on Disconnect**: The moment the bot disconnects or leaves, its temporary memory is wiped clean.
 * **Helpful Error Diagnostics**: If the Groq API key is invalid, rate-limited, or offline, the bot provides clear, friendly in-game feedback instead of failing silently.
 * **Chat Commands**:
-  * `!ask <question>` — Asks anything to the AI companion.
+  * `!chat <question>` — Asks anything to the AI companion (or mention `@botname`).
   * `@{botname} <message>` — Greets or chats naturally with the bot.
   * `!ai on` / `!ai off` — Toggle AI chat (Owner only).
 
@@ -91,7 +91,7 @@ A full-stack, headless Minecraft AFK bot platform with an authentic **Minecraft-
 | `!sleep` / `!bed` | Public | Finds nearest bed (24 blocks), walks to it, and sleeps |
 | `!wake` / `!wakeup` | Public | Wakes the bot up from bed |
 | `!nightskip` / `!nap` | Public | Leaves for 60s so players can sleep, then auto-rejoins |
-| `!ask <question>` | Public | Queries the Groq Llama-3.1 AI companion |
+| `!chat <question>` | Public | Queries the Groq Llama-3.1 AI companion (alias: `!ask`) |
 | `@{botname}` / `!hi` | Public | Greets the bot or chats with AI |
 | `!follow` / `!come` | Public | Follows the player calling the bot |
 | `!stop` / `!halt` | Public | Stops pathfinding and stays in place |
