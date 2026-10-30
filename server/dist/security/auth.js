@@ -5,7 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SessionAuth = void 0;
 const crypto_1 = __importDefault(require("crypto"));
-const AUTH_SECRET = process.env.CRAFTBOT_SECRET || 'craftbot_secure_production_secret_key_92813';
+const AUTH_SECRET = process.env.CRAFTBOT_SECRET || crypto_1.default.randomBytes(32).toString('hex');
 class SessionAuth {
     /**
      * Create an HMAC-signed session token for a user

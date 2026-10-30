@@ -197,6 +197,25 @@ export class SecurityValidator {
     }
     return { valid: true, sanitized: num };
   }
+
+  /**
+   * Validate User ID (UID)
+   * Must be 1-128 chars of safe alphanumeric, hyphen, underscore, colon, dot, or at-sign
+   */
+  public static validateUid(uid: string): ValidationResult<string> {
+    if (!uid || typeof uid !== 'string') {
+      return { valid: false, error: 'User ID is required.' };
+    }
+    const trimmed = uid.trim();
+    if (trimmed.length < 1 || trimmed.length > 128) {
+      return { valid: false, error: 'User ID must be between 1 and 128 characters.' };
+    }
+    const validUidRegex = /^[a-zA-Z0-9_\-:.@]{1,128}$/;
+    if (!validUidRegex.test(trimmed)) {
+      return { valid: false, error: 'User ID contains illegal characters.' };
+    }
+    return { valid: true, sanitized: trimmed };
+  }
 }
 
 /**
@@ -204,6 +223,25 @@ export class SecurityValidator {
  */
 export class RateLimiter {
   private actions: Map<string, number[]> = new Map();
+
+  constructor(cleanupIntervalMs: number = 60000) {
+    if (typeof setInterval !== 'undefined') {
+      const timer = setInterval(() => {
+        const now = Date.now();
+        for (const [key, timestamps] of this.actions.entries()) {
+          const fresh = timestamps.filter(t => now - t < 120000);
+          if (fresh.length === 0) {
+            this.actions.delete(key);
+          } else {
+            this.actions.set(key, fresh);
+          }
+        }
+      }, cleanupIntervalMs);
+      if (timer && typeof timer.unref === 'function') {
+        timer.unref();
+      }
+    }
+  }
 
   /**
    * Check if action is allowed

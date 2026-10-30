@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-const AUTH_SECRET = process.env.CRAFTBOT_SECRET || 'craftbot_secure_production_secret_key_92813';
+const AUTH_SECRET = process.env.CRAFTBOT_SECRET || crypto.randomBytes(32).toString('hex');
 
 export interface UserSession {
   uid: string;

@@ -225,6 +225,51 @@ assert('Watchdog reports non-zero rssMB', metrics.rssMB > 0);
 assert('Watchdog accurately tracks active bot count', metrics.activeBotsCount === 2);
 
 // ==========================================
+// 11. UID & ENDPOINT INPUT SANITIZATION
+// ==========================================
+console.log('\n--- TEST GROUP 11: UID & Input Sanitization ---');
+
+const validUids = [
+  'dDnW2MKP5TctiKDVpFWPAvhFCW03',
+  'user_12345',
+  'auth-user-id.98',
+  'user@domain.com',
+];
+
+for (const uid of validUids) {
+  const result = SecurityValidator.validateUid(uid);
+  assert(`Valid UID format accepted: "${uid}"`, result.valid && result.sanitized === uid);
+}
+
+const maliciousUids = [
+  '',
+  '   ',
+  '<script>alert("xss")</script>',
+  '../../etc/passwd',
+  'user; DROP TABLE users;--',
+  'a'.repeat(129), // Exceeds max length
+  'uid with spaces',
+  'uid\0nullbyte',
+  'uid\nnewline',
+];
+
+for (const badUid of maliciousUids) {
+  const result = SecurityValidator.validateUid(badUid);
+  assert(`Malicious/invalid UID blocked: "${badUid.slice(0, 20)}"`, !result.valid);
+}
+
+// ==========================================
+// 12. RUNTIME CRYPTO SECRET GENERATION
+// ==========================================
+console.log('\n--- TEST GROUP 12: HMAC Token Security ---');
+
+const testToken1 = SessionAuth.createSessionToken('sec_user_1', 'PlayerOne');
+const testToken2 = SessionAuth.createSessionToken('sec_user_2', 'PlayerTwo');
+assert('Session token 1 successfully verified', SessionAuth.verifySessionToken(testToken1)?.uid === 'sec_user_1');
+assert('Session token 2 successfully verified', SessionAuth.verifySessionToken(testToken2)?.uid === 'sec_user_2');
+assert('Cross-verifying swapped signature fails', SessionAuth.verifySessionToken(testToken1.split('.')[0] + '.' + testToken2.split('.')[1]) === null);
+
+// ==========================================
 // SUMMARY
 // ==========================================
 console.log('\n====================================================');

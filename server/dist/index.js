@@ -17,33 +17,125 @@ const app = (0, express_1.default)();
 const server = http_1.default.createServer(app);
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : (process.platform === 'win32' ? 3001 : 80);
 const rateLimiter = new validator_1.RateLimiter();
-app.use((0, cors_1.default)({ origin: '*' }));
-app.use(express_1.default.json());
-// Enable popup communication for Firebase Google OAuth without COOP restriction
+// 1. Disable identifying Express headers
+app.disable('x-powered-by');
+// 2. Comprehensive Security Headers Middleware
 app.use((req, res, next) => {
+    // Prevent MIME-sniffing
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    // Prevent UI Redressing / Clickjacking
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    // Modern standard: disable buggy legacy browser XSS filters
+    res.setHeader('X-XSS-Protection', '0');
+    // Send full referrer on same-origin, only origin on cross-origin HTTPS
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    // Restrict unused browser hardware APIs
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    // Enable popup communication for Firebase Google OAuth without COOP restriction
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+    // HSTS in production (enforce HTTPS for 1 year)
+    if (process.env.NODE_ENV === 'production') {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    // Content Security Policy (CSP) tailored for CraftBot, Google OAuth, and Firebase
+    res.setHeader('Content-Security-Policy', [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' https://apis.google.com https://*.firebaseio.com https://*.googleapis.com",
+        "connect-src 'self' wss: https: http://localhost:* ws://localhost:*",
+        "img-src 'self' data: https: blob:",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' https://fonts.gstatic.com data:",
+        "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com",
+    ].join('; '));
     next();
 });
-// API: Session Token Generator for Authenticated Clients
-app.post('/api/auth/token', (req, res) => {
-    const { uid, ownerIgn } = req.body;
-    if (!uid || typeof uid !== 'string') {
-        return res.status(400).json({ error: 'Valid UID is required.' });
+// 3. Intelligent & Configurable CORS Policy
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim().toLowerCase())
+    : [];
+const isOriginAllowed = (origin) => {
+    if (!origin)
+        return true; // Allow non-browser agents (curl, server-to-server)
+    const lower = origin.toLowerCase();
+    if (allowedOrigins.length > 0 && allowedOrigins.includes(lower)) {
+        return true;
     }
-    const token = auth_1.SessionAuth.createSessionToken(uid, ownerIgn || '');
-    res.json({ token, uid, ownerIgn });
+    // Allow localhost & 127.0.0.1 for development
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(lower)) {
+        return true;
+    }
+    // Allow Render hosting domains (*.onrender.com)
+    if (/^https:\/\/[a-z0-9\-]+\.onrender\.com$/.test(lower)) {
+        return true;
+    }
+    return process.env.NODE_ENV !== 'production';
+};
+const corsOptions = {
+    origin: (origin, callback) => {
+        if (isOriginAllowed(origin)) {
+            callback(null, true);
+        }
+        else {
+            callback(new Error(`CORS blocked: Origin ${origin} not permitted.`));
+        }
+    },
+    methods: ['GET', 'POST', 'OPTIONS'],
+    credentials: true,
+};
+app.use((0, cors_1.default)(corsOptions));
+app.use(express_1.default.json({ limit: '100kb' })); // Mitigate payload flooding
+// Helper to reliably extract client IP behind reverse proxies
+const getClientIp = (req) => {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string') {
+        return forwarded.split(',')[0].trim();
+    }
+    return req.socket.remoteAddress || 'unknown';
+};
+// 4. Global API Rate Limiter (Max 60 requests/min per IP)
+app.use('/api', (req, res, next) => {
+    const ip = getClientIp(req);
+    if (!rateLimiter.isAllowed(`api_general:${ip}`, 60, 60000)) {
+        return res.status(429).json({ error: 'Too many requests. Please slow down.' });
+    }
+    next();
 });
-// API health endpoint
+// API: Session Token Generator for Authenticated Clients (Rate limited: Max 15 / min per IP)
+app.post('/api/auth/token', (req, res) => {
+    const ip = getClientIp(req);
+    if (!rateLimiter.isAllowed(`api_auth:${ip}`, 15, 60000)) {
+        return res.status(429).json({ error: 'Too many authentication attempts. Please wait a minute.' });
+    }
+    const { uid, ownerIgn } = req.body;
+    const uidVal = validator_1.SecurityValidator.validateUid(uid);
+    if (!uidVal.valid || !uidVal.sanitized) {
+        return res.status(400).json({ error: uidVal.error || 'Valid UID is required.' });
+    }
+    let sanitizedOwner = '';
+    if (ownerIgn && typeof ownerIgn === 'string') {
+        const ownerVal = validator_1.SecurityValidator.validateUsername(ownerIgn);
+        sanitizedOwner = ownerVal.valid && ownerVal.sanitized
+            ? ownerVal.sanitized
+            : ownerIgn.substring(0, 16).replace(/[^a-zA-Z0-9_]/g, '');
+    }
+    const token = auth_1.SessionAuth.createSessionToken(uidVal.sanitized, sanitizedOwner);
+    res.json({ token, uid: uidVal.sanitized, ownerIgn: sanitizedOwner });
+});
+// API health endpoint (Lightweight, non-disclosing)
 app.get('/health', (req, res) => {
     res.json({
         status: 'online',
         service: 'craftbot-daemon',
-        uptime: process.uptime(),
+        uptime: Math.floor(process.uptime()),
         timestamp: Date.now(),
     });
 });
-// API: Provide Firebase configuration dynamically to frontend from server environment variables
+// API: Provide Firebase client credentials dynamically to frontend from server environment variables
 app.get('/api/firebase-config', (req, res) => {
+    const ip = getClientIp(req);
+    if (!rateLimiter.isAllowed(`api_cfg:${ip}`, 30, 60000)) {
+        return res.status(429).json({ error: 'Rate limit exceeded.' });
+    }
     res.json({
         apiKey: process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || '',
         authDomain: process.env.FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN || '',
@@ -53,20 +145,31 @@ app.get('/api/firebase-config', (req, res) => {
         appId: process.env.FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID || '',
     });
 });
-// Serve static frontend in production
+// 5. Serve static frontend with hidden files & dotfiles ignored
 const clientDistPath = path_1.default.resolve(__dirname, '../../client/dist');
-app.use(express_1.default.static(clientDistPath));
-// Setup Socket.io
+app.use(express_1.default.static(clientDistPath, {
+    dotfiles: 'ignore',
+    index: 'index.html',
+}));
+// 6. Setup Socket.io with Hardened CORS
 const io = new socket_io_1.Server(server, {
     cors: {
-        origin: '*',
+        origin: (origin, callback) => {
+            if (isOriginAllowed(origin)) {
+                callback(null, true);
+            }
+            else {
+                callback(new Error(`CORS blocked: Origin ${origin} not permitted.`));
+            }
+        },
         methods: ['GET', 'POST'],
+        credentials: true,
     },
     pingTimeout: 30000,
     pingInterval: 15000,
 });
 const botManager = new BotManager_1.BotManager(io);
-// Socket Authentication Middleware
+// 7. Socket Authentication Middleware
 io.use((socket, next) => {
     const token = (socket.handshake.auth?.token || socket.handshake.query?.token);
     const rawUid = socket.handshake.query?.uid;
@@ -80,10 +183,18 @@ io.use((socket, next) => {
         socket.data.ownerIgn = session.ownerIgn;
         return next();
     }
-    // Fallback for local development if token is not provided
+    // In production, require cryptographic HMAC token verification
+    if (process.env.NODE_ENV === 'production') {
+        return next(new Error('Signed session token required in production environment.'));
+    }
+    // Fallback for local development testing only
     if (rawUid && typeof rawUid === 'string') {
-        socket.data.userId = rawUid.substring(0, 64);
-        socket.data.ownerIgn = typeof rawOwnerIgn === 'string' ? rawOwnerIgn.substring(0, 32) : '';
+        const uidVal = validator_1.SecurityValidator.validateUid(rawUid);
+        if (!uidVal.valid || !uidVal.sanitized) {
+            return next(new Error('Invalid UID format.'));
+        }
+        socket.data.userId = uidVal.sanitized;
+        socket.data.ownerIgn = typeof rawOwnerIgn === 'string' ? rawOwnerIgn.substring(0, 32).replace(/[^a-zA-Z0-9_]/g, '') : '';
         return next();
     }
     return next(new Error('Authentication credentials required.'));
@@ -130,7 +241,8 @@ io.on('connection', (socket) => {
         if (!rateLimiter.isAllowed(chatRateKey, 3, 1000)) {
             socket.emit('chat-message', {
                 id: Math.random().toString(36).substring(2, 9),
-                text: '⚠️ Slow down! You are sending chat messages too quickly.',
+                sender: 'System',
+                message: 'Chat rate limit reached. Slow down!',
                 timestamp: Date.now(),
                 isSystem: true,
             });
@@ -139,69 +251,6 @@ io.on('connection', (socket) => {
         const bot = botManager.getBot(userId);
         if (bot) {
             bot.sendChat(text);
-        }
-    });
-    // Event: Toss Item
-    socket.on('toss-item', ({ slot, count }) => {
-        const bot = botManager.getBot(userId);
-        if (bot) {
-            bot.tossItem(slot, count);
-        }
-    });
-    // Event: Toss All
-    socket.on('toss-all', () => {
-        const bot = botManager.getBot(userId);
-        if (bot) {
-            bot.tossAll();
-        }
-    });
-    // Event: Equip Item
-    socket.on('equip-item', ({ slot, destination }) => {
-        const bot = botManager.getBot(userId);
-        if (bot) {
-            bot.equipItem(slot, destination);
-        }
-    });
-    // Event: Eat Item
-    socket.on('eat-item', (slot) => {
-        const bot = botManager.getBot(userId);
-        if (bot) {
-            bot.eatItem(slot);
-        }
-    });
-    // Event: Use / Activate Item
-    socket.on('use-item', (slot) => {
-        const bot = botManager.getBot(userId);
-        if (bot) {
-            bot.useItem(slot);
-        }
-    });
-    // Event: Move / Swap Slot Item
-    socket.on('move-item', ({ sourceSlot, destSlot }) => {
-        const bot = botManager.getBot(userId);
-        if (bot) {
-            bot.moveItem(sourceSlot, destSlot);
-        }
-    });
-    // Event: Share Item in Chat
-    socket.on('share-item', (slot) => {
-        const bot = botManager.getBot(userId);
-        if (bot) {
-            bot.shareItem(slot);
-        }
-    });
-    // Event: Follow Player
-    socket.on('follow-player', (targetPlayer) => {
-        const bot = botManager.getBot(userId);
-        if (bot) {
-            bot.followPlayer(targetPlayer);
-        }
-    });
-    // Event: Stop Follow
-    socket.on('stop-follow', () => {
-        const bot = botManager.getBot(userId);
-        if (bot) {
-            bot.stopFollow();
         }
     });
     // Event: Toggle Anti-AFK
@@ -218,14 +267,14 @@ io.on('connection', (socket) => {
             bot.setAutoEat(Boolean(enabled));
         }
     });
-    // Event: Toggle Auto-Attack (Mob Farm)
+    // Event: Toggle Auto-Attack
     socket.on('toggle-auto-attack', (enabled) => {
         const bot = botManager.getBot(userId);
         if (bot) {
             bot.setAutoAttack(Boolean(enabled));
         }
     });
-    // Event: Toggle Groq AI Chat Companion
+    // Event: Toggle AI Chat
     socket.on('toggle-ai-chat', (enabled) => {
         const bot = botManager.getBot(userId);
         if (bot) {
@@ -233,14 +282,14 @@ io.on('connection', (socket) => {
             bot.broadcastState();
         }
     });
-    // Event: Find Nearest Bed & Sleep
+    // Event: Bed Sleep Navigation
     socket.on('bot-sleep', () => {
         const bot = botManager.getBot(userId);
         if (bot) {
             bot.goToSleep();
         }
     });
-    // Event: Wake Up From Bed
+    // Event: Wake up from Bed
     socket.on('bot-wake', () => {
         const bot = botManager.getBot(userId);
         if (bot) {
@@ -254,17 +303,18 @@ io.on('connection', (socket) => {
             bot.temporarySleepLeave(60);
         }
     });
-    // Event: Transfer Ownership from Web UI
-    socket.on('transfer-ownership', (newOwner) => {
+    // Event: Follow Player
+    socket.on('follow-player', (targetPlayer) => {
         const bot = botManager.getBot(userId);
         if (bot) {
-            const validation = validator_1.SecurityValidator.validateUsername(newOwner);
-            if (validation.valid && validation.sanitized) {
-                bot.config.ownerIgn = validation.sanitized;
-                bot.onOwnerChanged?.(validation.sanitized);
-                bot.broadcastState();
-                socket.emit('owner-updated', { newOwner: validation.sanitized });
-            }
+            bot.followPlayer(targetPlayer);
+        }
+    });
+    // Event: Stop Following
+    socket.on('stop-follow', () => {
+        const bot = botManager.getBot(userId);
+        if (bot) {
+            bot.stopFollow();
         }
     });
     // Event: Change Bot Username & Rejoin in 10s from Web UI
@@ -275,18 +325,92 @@ io.on('connection', (socket) => {
             return;
         }
         const result = bot.changeUsernameAndRejoin(newUsername, 10);
-        if (!result.success && result.error) {
-            socket.emit('bot-error', result.error);
+        if (!result.success) {
+            socket.emit('bot-error', result.error || 'Failed to rename bot.');
         }
     });
-    // Event: Set Disconnect Timer
-    socket.on('set-timer', (minutes) => {
+    // Event: Toss Item with Slot Boundary Check
+    socket.on('toss-item', (data) => {
+        const bot = botManager.getBot(userId);
+        if (bot && typeof data?.slot === 'number') {
+            const slotValidation = validator_1.SecurityValidator.validateInventorySlot(data.slot);
+            if (slotValidation.valid && slotValidation.sanitized !== undefined) {
+                bot.tossItem(slotValidation.sanitized, data.count);
+            }
+        }
+    });
+    // Event: Equip Item with Destination Validation
+    socket.on('equip-item', (data) => {
+        const bot = botManager.getBot(userId);
+        if (bot && typeof data?.slot === 'number') {
+            const slotValidation = validator_1.SecurityValidator.validateInventorySlot(data.slot);
+            if (slotValidation.valid && slotValidation.sanitized !== undefined) {
+                bot.equipItem(slotValidation.sanitized, data.destination);
+            }
+        }
+    });
+    // Event: Toss All
+    socket.on('toss-all', () => {
         const bot = botManager.getBot(userId);
         if (bot) {
-            bot.setDisconnectTimer(minutes);
+            bot.tossAll();
         }
     });
-    // Event: Cancel Disconnect Timer
+    // Event: Eat Item
+    socket.on('eat-item', (slot) => {
+        const bot = botManager.getBot(userId);
+        if (bot && typeof slot === 'number') {
+            const slotValidation = validator_1.SecurityValidator.validateInventorySlot(slot);
+            if (slotValidation.valid && slotValidation.sanitized !== undefined) {
+                bot.eatItem(slotValidation.sanitized);
+            }
+        }
+    });
+    // Event: Use Item
+    socket.on('use-item', (slot) => {
+        const bot = botManager.getBot(userId);
+        if (bot && typeof slot === 'number') {
+            const slotValidation = validator_1.SecurityValidator.validateInventorySlot(slot);
+            if (slotValidation.valid && slotValidation.sanitized !== undefined) {
+                bot.useItem(slotValidation.sanitized);
+            }
+        }
+    });
+    // Event: Move Item
+    socket.on('move-item', (data) => {
+        const bot = botManager.getBot(userId);
+        if (bot && typeof data?.sourceSlot === 'number' && typeof data?.destSlot === 'number') {
+            const srcValidation = validator_1.SecurityValidator.validateInventorySlot(data.sourceSlot);
+            const dstValidation = validator_1.SecurityValidator.validateInventorySlot(data.destSlot);
+            if (srcValidation.valid && dstValidation.valid && srcValidation.sanitized !== undefined && dstValidation.sanitized !== undefined) {
+                bot.moveItem(srcValidation.sanitized, dstValidation.sanitized);
+            }
+        }
+    });
+    // Event: Share Item
+    socket.on('share-item', (slot) => {
+        const bot = botManager.getBot(userId);
+        if (bot && typeof slot === 'number') {
+            const slotValidation = validator_1.SecurityValidator.validateInventorySlot(slot);
+            if (slotValidation.valid && slotValidation.sanitized !== undefined) {
+                bot.shareItem(slotValidation.sanitized);
+            }
+        }
+    });
+    // Event: Set Auto-Disconnect Timer
+    socket.on('set-timer', (minutes) => {
+        const bot = botManager.getBot(userId);
+        if (!bot)
+            return;
+        const timerValidation = validator_1.SecurityValidator.validateTimerMinutes(minutes);
+        if (timerValidation.valid && timerValidation.sanitized !== undefined) {
+            bot.setDisconnectTimer(timerValidation.sanitized);
+        }
+        else {
+            socket.emit('bot-error', timerValidation.error || 'Invalid timer duration.');
+        }
+    });
+    // Event: Cancel Auto-Disconnect Timer
     socket.on('cancel-timer', () => {
         const bot = botManager.getBot(userId);
         if (bot) {
@@ -301,6 +425,14 @@ io.on('connection', (socket) => {
 app.get('*', (req, res) => {
     res.sendFile(path_1.default.join(clientDistPath, 'index.html'));
 });
+// Centralized Express Error Handler (Hides debug traces and internals)
+app.use((err, req, res, next) => {
+    console.error('[CraftBot Express Error]:', err?.message || err);
+    const status = typeof err?.status === 'number' ? err.status : 500;
+    res.status(status).json({
+        error: status === 500 ? 'Internal Server Error' : (err?.message || 'Request processing failed.'),
+    });
+});
 server.on('error', (err) => {
     if (err.code === 'EACCES' && PORT === 80) {
         console.warn(`[CraftBot] Port 80 permission denied, falling back to 3001...`);
@@ -314,5 +446,6 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`===============================================`);
     console.log(` CraftBot 24/7 Cloud Manager Running!`);
     console.log(` Server & WebSocket Gateway: http://0.0.0.0:${PORT}`);
+    console.log(` Mode: ${process.env.NODE_ENV || 'development'}`);
     console.log(`===============================================`);
 });
