@@ -59,13 +59,14 @@ export class GroqChatService {
         const modelIds: string[] = (data?.data || []).map((m: any) => m.id);
 
         const preferences = [
+          'openai/gpt-oss-120b',
+          'openai/gpt-oss-20b',
           'llama-3.3-70b-versatile',
           'llama-3.1-8b-instant',
           'llama3-8b-8192',
           'llama3-70b-8192',
           'mixtral-8x7b-32768',
           'gemma2-9b-it',
-          'openai/gpt-oss-20b',
         ];
 
         for (const pref of preferences) {
@@ -132,14 +133,15 @@ export class GroqChatService {
 
       const systemPrompt: ChatContextMessage = {
         role: 'system',
-        content: `You are "${botUsername}", an authentic Minecraft player and helpful companion on a Java server.
+        content: `You are "${botUsername}", an authentic Minecraft player and loyal companion on a Java server.
 Owner: "${ownerIgn}".
 RULES:
 1. Respond directly to "${sender}".
-2. Keep your response strictly under 100 characters so it fits on one line in Minecraft chat without line spam.
-3. Be witty, friendly, and authentic to Minecraft (mining, crafting, mobs, Nether, Redstone).
-4. Plain text only. No markdown (no asterisks, bold, backticks, hashtags). No emojis that fail in Minecraft font.
-5. Never execute or suggest server exploit commands (like /op, /stop, /ban).`,
+2. Keep your response strictly under 100 characters so it fits cleanly on one line in Minecraft chat without line spam.
+3. You fluently understand and speak Hinglish (Hindi written in English alphabet, e.g. "ek joke sunao", "kya haal hai", "diamond kahan milega"). If the user speaks Hinglish or Hindi, reply back naturally in fun, witty Hinglish or English!
+4. Be witty, friendly, and authentic to Minecraft (mining, crafting, mobs, Nether, Redstone).
+5. Plain text only. No markdown (no asterisks, bold, backticks, hashtags). Only standard letters, numbers and punctuation.
+6. Never execute or suggest server exploit commands (like /op, /stop, /ban).`,
       };
 
       const userPrompt: ChatContextMessage = {
@@ -149,72 +151,85 @@ RULES:
 
       const messages: ChatContextMessage[] = [systemPrompt, ...history, userPrompt];
 
-      // Assemble prioritized models to try in case of 404/model_not_found
+      // Assemble prioritized models to try in case of 404/400/model_not_found
       const preferredModel = await this.resolveActiveModel(apiKey);
       const candidates = Array.from(new Set([
         preferredModel,
+        'openai/gpt-oss-120b',
+        'openai/gpt-oss-20b',
         'llama-3.3-70b-versatile',
         'llama-3.1-8b-instant',
         'llama3-8b-8192',
         'llama3-70b-8192',
-        'mixtral-8x7b-32768',
       ]));
 
       let lastErrorStatus = 0;
       let rawReply: string | null = null;
 
       for (const modelToTry of candidates) {
-        try {
-          const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
+        // Try max_completion_tokens (modern Groq standard) first, fallback to max_tokens if needed
+        for (const tokenParam of ['max_completion_tokens', 'max_tokens'] as const) {
+          try {
+            const bodyPayload: any = {
               model: modelToTry,
               messages,
-              max_tokens: 60,
-              temperature: 0.75,
-              top_p: 0.9,
-            }),
-          });
+              temperature: 0.7,
+            };
+            bodyPayload[tokenParam] = 80;
 
-          if (response.ok) {
-            const data: any = await response.json();
-            rawReply = data?.choices?.[0]?.message?.content;
-            if (rawReply) {
-              this.activeModel = modelToTry;
-              break;
+            const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify(bodyPayload),
+            });
+
+            if (response.ok) {
+              const data: any = await response.json();
+              rawReply = data?.choices?.[0]?.message?.content;
+              if (rawReply) {
+                this.activeModel = modelToTry;
+                break;
+              }
             }
-          }
 
-          lastErrorStatus = response.status;
-          let errorDetail = '';
-          try {
-            const errJson: any = await response.json();
-            errorDetail = errJson?.error?.message || '';
-          } catch {
-            errorDetail = await response.text();
-          }
+            lastErrorStatus = response.status;
+            let errorDetail = '';
+            try {
+              const errJson: any = await response.json();
+              errorDetail = errJson?.error?.message || '';
+            } catch {
+              errorDetail = await response.text();
+            }
 
-          console.warn(`[Groq AI] Model "${modelToTry}" failed with status ${response.status}: ${errorDetail}`);
+            console.warn(`[Groq AI] Model "${modelToTry}" (${tokenParam}) returned ${response.status}: ${errorDetail}`);
 
-          // If 404 (model not found / deprecated), immediately continue to next candidate
-          if (response.status === 404) {
+            // Auth error: stop immediately
+            if (response.status === 401) {
+              return `[AI Error] Invalid GROQ_API_KEY! Please verify your key in Render or dashboard settings.`;
+            }
+            if (response.status === 429) {
+              return `[AI Busy] Groq rate limit reached! Please wait a moment before chatting again.`;
+            }
+
+            // If 400 due to max_tokens vs max_completion_tokens, try alternate parameter
+            if (response.status === 400 && (errorDetail.includes('max_tokens') || errorDetail.includes('max_completion_tokens'))) {
+              continue;
+            }
+
+            // If model is not found or unsupported, move to next model
             this.activeModel = null;
-            continue;
+            break;
+          } catch (callErr: any) {
+            console.warn(`[Groq AI] Attempt with "${modelToTry}" threw:`, callErr?.message);
+            break;
           }
+        }
 
-          // If auth or rate limit error, break early (model change won't fix this)
-          if (response.status === 401) {
-            return `[AI Error] Invalid GROQ_API_KEY! Please verify your key in Render or dashboard settings.`;
-          }
-          if (response.status === 429) {
-            return `[AI Busy] Groq rate limit reached! Please wait a moment before chatting again.`;
-          }
-        } catch (callErr: any) {
-          console.warn(`[Groq AI] Attempt with "${modelToTry}" threw:`, callErr?.message);
+        if (rawReply) {
+          break;
         }
       }
 
