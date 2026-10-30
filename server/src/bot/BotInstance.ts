@@ -41,7 +41,8 @@ export class BotInstance {
   private lastInGameCommandTime: number = 0;
   private hasAnnouncedSpawn: boolean = false;
   private lastEmittedChatMessage: { text: string; time: number } = { text: '', time: 0 };
-  private trackedDoors: Map<string, { x: number; y: number; z: number; openedAt: number; initialDist: number }> = new Map();
+  private trackedDoors: Map<string, { x: number; y: number; z: number; openedAt: number; initialDist: number; minDist: number }> = new Map();
+  private doorCooldowns: Map<string, number> = new Map();
 
   // Smart Reconnect & Offline Handling
   public isExplicitlyStopped: boolean = false;
@@ -211,6 +212,49 @@ export class BotInstance {
           defaultMove.allow1by1towers = false;
           defaultMove.allowFreeMotion = false;
           defaultMove.canOpenDoors = true; // Enables opening doors & fence gates smoothly during pathfinding
+
+          // Register all non-iron doors, trapdoors, and fence gates as openable
+          if ((this.bot as any).registry?.blocksArray) {
+            (this.bot as any).registry.blocksArray.forEach((b: any) => {
+              if (b && b.name) {
+                const name = b.name.toLowerCase();
+                const isPassableDoor = (name.endsWith('_door') || name.endsWith('_gate') || name.endsWith('_fence_gate')) && !name.includes('iron');
+                if (isPassableDoor) {
+                  defaultMove.openable.add(b.id);
+                }
+              }
+            });
+          }
+
+          // Patch getBlock on defaultMove so pathfinder A* considers wooden doors openable, safe, and traversable
+          const originalGetBlock = defaultMove.getBlock.bind(defaultMove);
+          defaultMove.getBlock = (node: any, dx: number, dy: number, dz: number) => {
+            const b = originalGetBlock(node, dx, dy, dz);
+            if (b && b.name) {
+              const name = b.name.toLowerCase();
+              const isPassableDoor = (name.endsWith('_door') || name.endsWith('_gate') || name.endsWith('_fence_gate')) && !name.includes('iron');
+              if (isPassableDoor) {
+                b.openable = true;
+                b.safe = true;
+                b.physical = false; // Pathfinder calculates path straight through the doorway without treating it as solid rock!
+              }
+            }
+            return b;
+          };
+
+          // Patch safeOrBreak on defaultMove so doors have minimal traversal cost and never require breaking
+          const originalSafeOrBreak = (defaultMove as any).safeOrBreak.bind(defaultMove);
+          (defaultMove as any).safeOrBreak = (block: any, ...args: any[]) => {
+            if (block && block.name) {
+              const name = block.name.toLowerCase();
+              const isPassableDoor = (name.endsWith('_door') || name.endsWith('_gate') || name.endsWith('_fence_gate')) && !name.includes('iron');
+              if (isPassableDoor) {
+                return 1; // Minimal step cost, no mining
+              }
+            }
+            return originalSafeOrBreak(block, ...args);
+          };
+
           this.bot.pathfinder.setMovements(defaultMove);
           this.bot.pathfinder.thinkTimeout = 8000;
         }
@@ -301,9 +345,17 @@ export class BotInstance {
       }
     });
 
-    // Smart Door Handler: Automatically close doors behind the bot as it walks through
+    // Smart Door Handler: Automatically open closed doors and close them after passing through
+    let doorTickCounter = 0;
+    this.bot.on('physicTick', () => {
+      doorTickCounter++;
+      if (doorTickCounter % 3 === 0) {
+        this.handleSmartDoors();
+      }
+    });
+
     this.bot.on('move', () => {
-      this.handleDoorClosing();
+      this.handleSmartDoors();
     });
 
     // Health & Hunger updates
@@ -388,58 +440,119 @@ export class BotInstance {
   }
 
   /**
-   * Automatically detect when bot has walked through an open door, and close it behind the bot
+   * Smart Door Navigator:
+   * 1. Detects and opens closed wooden doors/gates in front of the bot during pathfinding and following
+   * 2. Safely closes the door behind the bot once it has passed through
    */
-  private handleDoorClosing() {
-    if (!this.bot || !this.bot.entity) return;
-    const pos = this.bot.entity.position;
+  private handleSmartDoors() {
+    if (!this.bot || this.status !== 'online' || !this.bot.entity) return;
+    if (this.bot.isSleeping) return;
 
-    // Scan nearby blocks (2 block radius) for open doors/gates
+    const pos = this.bot.entity.position;
+    const now = Date.now();
+
+    const isPassableDoor = (name: string): boolean => {
+      if (!name) return false;
+      const lower = name.toLowerCase();
+      if (lower.includes('iron')) return false; // Iron doors/gates require redstone
+      return lower.endsWith('_door') || lower.endsWith('_fence_gate') || lower.endsWith('_gate') || lower.endsWith('_trapdoor');
+    };
+
+    // 1. SCAN FOR NEARBY DOORS (Radius 2.5 blocks)
     for (let dx = -2; dx <= 2; dx++) {
       for (let dy = -1; dy <= 2; dy++) {
         for (let dz = -2; dz <= 2; dz++) {
           try {
-            const block = this.bot.blockAt(pos.offset(dx, dy, dz));
-            if (block && (block.name.endsWith('_door') || block.name.endsWith('_gate') || block.name.endsWith('_fence_gate'))) {
-              const props = block.getProperties();
-              const isOpen = props?.open === true || props?.open === 'true';
-              const key = `${block.position.x},${block.position.y},${block.position.z}`;
+            const blockPos = pos.offset(dx, dy, dz);
+            const block = this.bot.blockAt(blockPos);
+            if (!block || !isPassableDoor(block.name)) continue;
 
-              if (isOpen && !this.trackedDoors.has(key)) {
-                const dist = pos.distanceTo(block.position);
+            const props = block.getProperties ? block.getProperties() : null;
+            const isOpen = props?.open === true || props?.open === 'true';
+
+            // Canonicalize to lower block for 2-block tall doors
+            const isUpper = props?.half === 'upper';
+            const canonicalBlock = isUpper ? (this.bot.blockAt(block.position.offset(0, -1, 0)) || block) : block;
+            const cPos = canonicalBlock.position;
+            const key = `${cPos.x},${cPos.y},${cPos.z}`;
+
+            const dist = pos.distanceTo(cPos);
+            const cooldown = this.doorCooldowns.get(key) || 0;
+
+            // Scenario A: CLOSED DOOR NEARBY -> Open it so bot can pass
+            if (!isOpen) {
+              // Open when bot is within interaction range (<= 2.6 blocks) and not on recent cooldown
+              if (dist <= 2.6 && now - cooldown > 900) {
+                this.doorCooldowns.set(key, now);
+                this.bot.activateBlock(canonicalBlock).then(() => {
+                  console.log(`[SmartDoor] Opened door at (${cPos.x}, ${cPos.y}, ${cPos.z})`);
+                }).catch(() => {});
+
+                // Track this door so we close it after walking through
                 this.trackedDoors.set(key, {
-                  x: block.position.x,
-                  y: block.position.y,
-                  z: block.position.z,
-                  openedAt: Date.now(),
+                  x: cPos.x,
+                  y: cPos.y,
+                  z: cPos.z,
+                  openedAt: now,
                   initialDist: dist,
+                  minDist: dist,
                 });
               }
+            } 
+            // Scenario B: OPEN DOOR NEARBY -> Register to track and close after passing
+            else if (isOpen && !this.trackedDoors.has(key) && dist <= 2.2) {
+              this.trackedDoors.set(key, {
+                x: cPos.x,
+                y: cPos.y,
+                z: cPos.z,
+                openedAt: now,
+                initialDist: dist,
+                minDist: dist,
+              });
             }
           } catch (e) {}
         }
       }
     }
 
-    // Check tracked doors and close them if the bot has stepped past them
-    const now = Date.now();
+    // 2. CHECK TRACKED DOORS TO CLOSE BEHIND THE BOT
     for (const [key, tracked] of this.trackedDoors.entries()) {
       try {
-        const doorBlock = this.bot.blockAt(new (this.bot as any).vec3(tracked.x, tracked.y, tracked.z) || pos.offset(0,0,0));
-        if (!doorBlock) {
+        const doorPos = pos.offset(0, 0, 0);
+        doorPos.x = tracked.x;
+        doorPos.y = tracked.y;
+        doorPos.z = tracked.z;
+
+        const doorBlock = this.bot.blockAt(doorPos);
+        if (!doorBlock || !isPassableDoor(doorBlock.name)) {
           this.trackedDoors.delete(key);
           continue;
         }
 
-        const currentDist = pos.distanceTo(doorBlock.position);
-        // If bot is between 1.6 and 3.2 blocks away and further away than when it entered
-        if (currentDist > 1.6 && currentDist < 3.2 && currentDist > tracked.initialDist + 0.5) {
-          const props = doorBlock.getProperties();
-          if (props?.open === true || props?.open === 'true') {
-            this.bot.activateBlock(doorBlock).catch(() => {});
+        const currentDist = pos.distanceTo(doorPos);
+        tracked.minDist = Math.min(tracked.minDist, currentDist);
+
+        // Conditions to close door:
+        // 1. Bot has passed through (minDist was close <= 1.4, now currentDist >= 1.8)
+        // 2. Bot is safely outside the door swing/collision box (1.8 <= currentDist <= 3.2)
+        // 3. Not on recent action cooldown
+        const cooldown = this.doorCooldowns.get(key) || 0;
+        const hasPassed = (tracked.minDist <= 1.4 && currentDist >= 1.8 && currentDist <= 3.2) || 
+                          (currentDist > tracked.initialDist + 0.8 && currentDist >= 1.8 && currentDist <= 3.2);
+
+        if (hasPassed && now - cooldown > 900) {
+          const props = doorBlock.getProperties ? doorBlock.getProperties() : null;
+          const isOpen = props?.open === true || props?.open === 'true';
+
+          if (isOpen) {
+            this.doorCooldowns.set(key, now);
+            this.bot.activateBlock(doorBlock).then(() => {
+              console.log(`[SmartDoor] Closed door behind bot at (${tracked.x}, ${tracked.y}, ${tracked.z})`);
+            }).catch(() => {});
           }
           this.trackedDoors.delete(key);
-        } else if (currentDist >= 3.5 || now - tracked.openedAt > 8000) {
+        } else if (currentDist > 3.6 || now - tracked.openedAt > 10000) {
+          // Beyond reach or timed out, stop tracking
           this.trackedDoors.delete(key);
         }
       } catch (e) {
@@ -1359,6 +1472,8 @@ export class BotInstance {
       this.connectionHealthInterval = null;
     }
     this.cancelDisconnectTimer();
+    this.trackedDoors.clear();
+    this.doorCooldowns.clear();
 
     // Wipe short-term AI conversation context on disconnect
     this.groqService.clearHistory(this.config.username);
