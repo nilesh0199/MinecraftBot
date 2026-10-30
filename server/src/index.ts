@@ -12,7 +12,7 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : (process.platform === 'win32' ? 3001 : 80);
 const rateLimiter = new RateLimiter();
 
 app.use(cors({ origin: '*' }));
@@ -220,6 +220,15 @@ io.on('connection', (socket) => {
 // Fallback to client index.html for SPA routing
 app.get('*', (req, res) => {
   res.sendFile(path.join(clientDistPath, 'index.html'));
+});
+
+server.on('error', (err: any) => {
+  if (err.code === 'EACCES' && PORT === 80) {
+    console.warn(`[CraftBot] Port 80 permission denied, falling back to 3001...`);
+    server.listen(3001);
+  } else {
+    console.error(`[CraftBot] Server error:`, err);
+  }
 });
 
 server.listen(PORT, () => {
