@@ -28,7 +28,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
   const [botState, setBotState] = useState<BotState>({
     status: 'offline',
     username: userProfile.recentBotNames?.[0] || 'MyBot',
-    serverIp: userProfile.recentServerIp || 'localhost',
+    serverIp: userProfile.recentServerIp || '',
     serverPort: 25565,
     health: 20,
     food: 20,
@@ -414,9 +414,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
           /* Bot is offline: Show Launcher prominently */
           <div className="max-w-xl mx-auto pt-6">
             <BotLauncher
+              uid={userProfile.uid}
               recentBotNames={userProfile.recentBotNames || []}
-              recentServerIp={userProfile.recentServerIp || 'localhost:25565'}
-              recentServerIps={userProfile.recentServerIps || (userProfile.recentServerIp ? [userProfile.recentServerIp] : [])}
+              recentServerIp={userProfile.recentServerIp || ''}
+              recentServerIps={userProfile.recentServerIps || []}
               serverAlert={serverAlert}
               onLaunch={handleLaunchBot}
               isLaunching={isLaunching}

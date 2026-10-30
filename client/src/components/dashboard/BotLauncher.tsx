@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Play, History, Server, Key, Sparkles, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Play, History, Server, Key, Sparkles, AlertCircle, X } from 'lucide-react';
+import { removeRecentServer, clearAllRecentServers } from '../../firebase';
 
 export interface BotLaunchConfig {
   username: string;
@@ -13,6 +14,7 @@ export interface BotLaunchConfig {
 }
 
 interface BotLauncherProps {
+  uid?: string;
   recentBotNames: string[];
   recentServerIp: string;
   recentServerIps?: string[];
@@ -20,9 +22,12 @@ interface BotLauncherProps {
   onLaunch: (config: BotLaunchConfig) => Promise<void>;
   isLaunching: boolean;
   onClose?: () => void;
+  onRemoveServer?: (serverIp: string) => void;
+  onClearServers?: () => void;
 }
 
 export const BotLauncher: React.FC<BotLauncherProps> = ({
+  uid,
   recentBotNames = [],
   recentServerIp = '',
   recentServerIps = [],
@@ -30,9 +35,16 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
   onLaunch,
   isLaunching,
   onClose,
+  onRemoveServer,
+  onClearServers,
 }) => {
   const [username, setUsername] = useState(recentBotNames[0] || 'Bot');
-  const [serverAddress, setServerAddress] = useState(recentServerIp || 'ChoduCID-7CAj.aternos.me:16808');
+
+  // Only pre-fill address if user actually saved one (no legacy localhost or hardcoded dummy defaults)
+  const initialAddress = (recentServerIp && !recentServerIp.toLowerCase().startsWith('localhost'))
+    ? recentServerIp
+    : '';
+  const [serverAddress, setServerAddress] = useState(initialAddress);
   const [authPassword, setAuthPassword] = useState('');
   const [version, setVersion] = useState('auto');
   const [autoEat, setAutoEat] = useState(true);
@@ -40,10 +52,43 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
   const [autoAttack, setAutoAttack] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Compile list of recent server IPs
-  const serverList = recentServerIps.length > 0
-    ? recentServerIps
-    : (recentServerIp ? [recentServerIp] : ['localhost:25565']);
+  // Compile list of recent server IPs (only real servers saved from now on)
+  const [serverList, setServerList] = useState<string[]>(() => {
+    const list = recentServerIps.length > 0
+      ? recentServerIps
+      : (recentServerIp ? [recentServerIp] : []);
+    return list.filter(ip => ip && !ip.toLowerCase().startsWith('localhost'));
+  });
+
+  useEffect(() => {
+    const list = recentServerIps.length > 0
+      ? recentServerIps
+      : (recentServerIp ? [recentServerIp] : []);
+    setServerList(list.filter(ip => ip && !ip.toLowerCase().startsWith('localhost')));
+  }, [recentServerIps, recentServerIp]);
+
+  const handleRemoveServer = (ipToRemove: string) => {
+    const updated = serverList.filter(ip => ip.toLowerCase() !== ipToRemove.toLowerCase());
+    setServerList(updated);
+    if (serverAddress.toLowerCase() === ipToRemove.toLowerCase()) {
+      setServerAddress(updated[0] || '');
+    }
+    if (onRemoveServer) {
+      onRemoveServer(ipToRemove);
+    } else if (uid) {
+      removeRecentServer(uid, ipToRemove).catch(() => {});
+    }
+  };
+
+  const handleClearAllServers = () => {
+    setServerList([]);
+    setServerAddress('');
+    if (onClearServers) {
+      onClearServers();
+    } else if (uid) {
+      clearAllRecentServers(uid).catch(() => {});
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,28 +216,53 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
               Server IP & Port
             </label>
             {serverList.length > 0 && (
-              <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
-                <History className="w-3 h-3 text-slate-400" /> Recent Servers:
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
+                  <History className="w-3 h-3 text-slate-400" /> Recent:
+                </span>
+                <button
+                  type="button"
+                  onClick={handleClearAllServers}
+                  className="text-[10px] font-mono text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                  title="Clear all saved server addresses"
+                >
+                  [Clear]
+                </button>
+              </div>
             )}
           </div>
 
-          {/* Quick Select Pills for Recent Server Addresses */}
+          {/* Quick Select Pills for Recent Server Addresses with Delete Button */}
           {serverList.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-2">
               {serverList.map((addr) => (
-                <button
-                  type="button"
+                <div
                   key={addr}
-                  onClick={() => setServerAddress(addr)}
-                  className={`px-2.5 py-1 text-xs font-mono rounded border transition-colors cursor-pointer ${
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-mono rounded border transition-colors ${
                     serverAddress === addr
                       ? 'bg-mc-diamond/20 border-mc-diamond text-mc-diamond font-bold'
                       : 'bg-[#14151b] border-mc-border text-slate-300 hover:border-slate-500'
                   }`}
                 >
-                  {addr}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setServerAddress(addr)}
+                    className="cursor-pointer"
+                  >
+                    {addr}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveServer(addr);
+                    }}
+                    className="text-slate-500 hover:text-red-400 p-0.5 rounded hover:bg-red-950/50 transition-colors ml-0.5 cursor-pointer"
+                    title={`Delete ${addr}`}
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -202,13 +272,13 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
               type="text"
               value={serverAddress}
               onChange={(e) => setServerAddress(e.target.value)}
-              placeholder="e.g. play.myserver.net:25565"
+              placeholder="e.g. server.aternos.me:16808 or mc.example.com"
               className="w-full bg-[#121318] border border-mc-border px-3 py-2 text-sm text-mc-diamond rounded focus:border-mc-diamond focus:outline-none font-mono"
             />
             <Server className="w-4 h-4 text-slate-500 absolute right-3 top-2.5 pointer-events-none" />
           </div>
           <p className="text-[11px] text-slate-500 mt-1">
-            Select a recent server or enter an address. Defaults to port 25565.
+            Enter your server address. Defaults to port 25565 if omitted.
           </p>
         </div>
 

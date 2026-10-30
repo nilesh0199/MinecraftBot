@@ -54,7 +54,22 @@ export function App() {
           setCurrentUser(user);
           if (user) {
             try {
-              const profile = await getUserProfile(user.uid);
+              let profile = await getUserProfile(user.uid);
+
+              // One-time purge of previously loaded server addresses (fresh clean slate)
+              const purgeKey = `craftbot_purge_legacy_servers_${user.uid}_v1`;
+              if (!localStorage.getItem(purgeKey)) {
+                localStorage.setItem(purgeKey, 'true');
+                if (profile) {
+                  profile = {
+                    ...profile,
+                    recentServerIp: '',
+                    recentServerIps: [],
+                  };
+                  saveUserProfile(profile).catch(() => {});
+                }
+              }
+
               if (profile && profile.ownerIgn) {
                 setUserProfile(profile);
                 setShowOnboarding(false);
@@ -67,7 +82,8 @@ export function App() {
                   displayName: user.displayName || 'Minecraft Player',
                   ownerIgn: '',
                   recentBotNames: [],
-                  recentServerIp: 'localhost:25565',
+                  recentServerIp: '',
+                  recentServerIps: [],
                 });
                 setShowOnboarding(true);
               }
@@ -107,7 +123,8 @@ export function App() {
         displayName: 'Nilesh',
         ownerIgn: 'Nilesh_Gamer',
         recentBotNames: ['FarmerBob', 'Nilesh_AFK'],
-        recentServerIp: 'localhost:25565',
+        recentServerIp: '',
+        recentServerIps: [],
       };
 
       setCurrentUser({
@@ -161,7 +178,8 @@ export function App() {
       displayName,
       ownerIgn,
       recentBotNames: userProfile?.recentBotNames || [],
-      recentServerIp: userProfile?.recentServerIp || 'localhost:25565',
+      recentServerIp: userProfile?.recentServerIp || '',
+      recentServerIps: userProfile?.recentServerIps || [],
     };
 
     try {

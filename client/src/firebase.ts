@@ -156,24 +156,67 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
 }
 
 /**
- * Helper to update recent bot username and server IP (stores last 3 usernames)
+ * Helper to update recent bot username and server IP (stores last 3 addresses from now on)
  */
 export async function recordBotUsage(uid: string, botName: string, serverIp: string): Promise<void> {
   const current = await getUserProfile(uid);
   if (!current) return;
 
+  const trimmedIp = serverIp.trim();
+  if (!trimmedIp || trimmedIp.toLowerCase().startsWith('localhost')) return;
+
   const filteredNames = (current.recentBotNames || []).filter(name => name.toLowerCase() !== botName.toLowerCase());
   const updatedBotNames = [botName, ...filteredNames].slice(0, 3);
 
-  const existingServers = current.recentServerIps || (current.recentServerIp ? [current.recentServerIp] : []);
-  const filteredServers = existingServers.filter(ip => ip.toLowerCase() !== serverIp.toLowerCase());
-  const updatedServers = [serverIp, ...filteredServers].slice(0, 3);
+  // Clean out any legacy localhost defaults
+  const existingServers = (current.recentServerIps || (current.recentServerIp ? [current.recentServerIp] : []))
+    .filter(ip => ip && !ip.toLowerCase().startsWith('localhost'));
+  const filteredServers = existingServers.filter(ip => ip.toLowerCase() !== trimmedIp.toLowerCase());
+  const updatedServers = [trimmedIp, ...filteredServers].slice(0, 3);
 
   const updated: UserProfile = {
     ...current,
     recentBotNames: updatedBotNames,
-    recentServerIp: serverIp,
+    recentServerIp: trimmedIp,
     recentServerIps: updatedServers,
+    updatedAt: Date.now(),
+  };
+
+  await saveUserProfile(updated);
+}
+
+/**
+ * Remove a specific server address from recent servers list
+ */
+export async function removeRecentServer(uid: string, serverIp: string): Promise<void> {
+  const current = await getUserProfile(uid);
+  if (!current) return;
+
+  const updatedServers = (current.recentServerIps || []).filter(
+    (ip) => ip.toLowerCase() !== serverIp.toLowerCase()
+  );
+
+  const updated: UserProfile = {
+    ...current,
+    recentServerIp: updatedServers[0] || '',
+    recentServerIps: updatedServers,
+    updatedAt: Date.now(),
+  };
+
+  await saveUserProfile(updated);
+}
+
+/**
+ * Clear all recent server addresses from user profile
+ */
+export async function clearAllRecentServers(uid: string): Promise<void> {
+  const current = await getUserProfile(uid);
+  if (!current) return;
+
+  const updated: UserProfile = {
+    ...current,
+    recentServerIp: '',
+    recentServerIps: [],
     updatedAt: Date.now(),
   };
 

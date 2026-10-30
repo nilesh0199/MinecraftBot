@@ -182,7 +182,7 @@ export const HUD: React.FC<HUDProps> = ({ botState, onRetryConnect, onChangeUser
               )}
             </div>
             <div className="text-[11px] font-mono text-slate-400 flex items-center gap-2 mt-0.5">
-              <span>{botState.serverIp}:{botState.serverPort}</span>
+              <span>{botState.serverIp ? `${botState.serverIp}:${botState.serverPort}` : 'Ready to Connect'}</span>
               <span>•</span>
               <span
                 className={`flex items-center gap-1 px-1.5 py-0.2 rounded border text-[10px] ${getPingColor(
@@ -343,7 +343,7 @@ export const HUD: React.FC<HUDProps> = ({ botState, onRetryConnect, onChangeUser
             <div className="text-xs font-mono text-slate-300 space-y-1">
               <div className="flex justify-between">
                 <span className="text-slate-500">Host IP:</span>
-                <span className="text-slate-200 truncate max-w-[150px]">{botState.serverIp}</span>
+                <span className="text-slate-200 truncate max-w-[150px]">{botState.serverIp || 'None'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Daemon:</span>
