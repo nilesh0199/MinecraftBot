@@ -89,8 +89,8 @@ io.on('connection', (socket) => {
     // Join private room isolated to this user
     socket.join(userId);
     console.log(`[Socket] Authenticated connection: User ${userId} (Owner IGN: ${ownerIgn || 'N/A'})`);
-    // If user already has a bot running in background (or cloud auto-spawned bot), sync state immediately
-    const existingBot = botManager.getBot(userId) || (ownerIgn ? botManager.findBotByOwner(ownerIgn) : undefined) || botManager.getBot('cloud-default-session');
+    // If user already has a bot running in background, sync state immediately
+    const existingBot = botManager.getBot(userId) || (ownerIgn ? botManager.findBotByOwner(ownerIgn) : undefined);
     if (existingBot) {
         if (existingBot.userId !== userId) {
             botManager.reassignBotUser(existingBot, userId);

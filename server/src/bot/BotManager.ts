@@ -191,33 +191,11 @@ export class BotManager {
   }
 
   /**
-   * Persistence: Automatically restore running bots after server crash or Render reboot
+   * Persistence: Automatically restore running bots from active_bots.json if present
    */
   public async restoreSavedBots(): Promise<void> {
     const saved = this.loadPersistedBots();
     if (saved.length === 0) {
-      // Check if environment variables specify a 24/7 cloud server to maintain
-      const envHost = process.env.MC_SERVER_IP || process.env.DEFAULT_SERVER_IP;
-      if (envHost) {
-        const envPort = parseInt(process.env.MC_SERVER_PORT || process.env.DEFAULT_SERVER_PORT || '25565', 10);
-        const envUsername = process.env.MC_BOT_USERNAME || process.env.DEFAULT_BOT_USERNAME || 'Bot';
-        const envOwner = process.env.MC_OWNER_IGN || process.env.DEFAULT_OWNER_IGN || 'Naya_hu';
-
-        console.log(`[BotManager] Auto-restoring 24/7 cloud environment bot: ${envUsername} -> ${envHost}:${envPort}`);
-        const defaultUserId = 'cloud-default-session';
-        const defaultConfig: BotConfig = {
-          username: envUsername,
-          serverIp: envHost,
-          serverPort: envPort,
-          ownerIgn: envOwner,
-          autoEat: true,
-          antiAfk: true,
-          autoAttack: false,
-          isAiChatActive: true,
-        };
-        this.saveBotToPersistence(defaultUserId, defaultConfig);
-        this.spawnInternal(defaultUserId, defaultConfig);
-      }
       return;
     }
 

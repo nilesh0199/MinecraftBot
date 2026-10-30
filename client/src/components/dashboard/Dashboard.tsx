@@ -145,34 +145,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
     };
   }, [userProfile, sessionToken]);
 
-  // Auto-rejoin if bot was previously active before Render redeploy/restart
+  // Purge any legacy auto-spawn cache on mount so user always controls spawning cleanly from UI
   useEffect(() => {
-    if (!socket || botState.status !== 'offline') return;
-
-    const timer = setTimeout(() => {
-      try {
-        const savedSession = localStorage.getItem('craftbot_auto_spawn');
-        if (savedSession && botState.status === 'offline' && !isLaunching) {
-          const config = JSON.parse(savedSession);
-          if (config && config.serverIp && config.username) {
-            // Auto-correct transposed port 16808 -> 16080
-            if (config.serverIp.toLowerCase().includes('choducid-7caj.aternos.me') && config.serverPort === 16808) {
-              config.serverPort = 16080;
-              localStorage.setItem('craftbot_auto_spawn', JSON.stringify(config));
-            }
-            console.log(`[Auto-Rejoin] Server restarted. Automatically rejoining ${config.username} into ${config.serverIp}:${config.serverPort}...`);
-            setIsLaunching(true);
-            socket.emit('start-bot', {
-              ...config,
-              ownerIgn: userProfile.ownerIgn || config.ownerIgn,
-            });
-          }
-        }
-      } catch (e) {}
-    }, 1500);
-
-    return () => clearTimeout(timer);
-  }, [socket, botState.status, isLaunching, userProfile.ownerIgn]);
+    try {
+      localStorage.removeItem('craftbot_auto_spawn');
+    } catch (e) {}
+  }, []);
 
   // Launch Bot Handler
   const handleLaunchBot = async (config: BotLaunchConfig) => {
@@ -185,14 +163,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
     if (resolvedConfig.serverIp.toLowerCase().includes('choducid-7caj.aternos.me') && resolvedConfig.serverPort === 16808) {
       resolvedConfig.serverPort = 16080;
     }
-
-    // Persist session locally so dashboard auto-rejoins bot on any future server reboot/redeploy
-    try {
-      localStorage.setItem('craftbot_auto_spawn', JSON.stringify({
-        ...resolvedConfig,
-        ownerIgn: userProfile.ownerIgn,
-      }));
-    } catch (e) {}
 
     // Save recent bot username and server IP to Firebase (non-blocking in background)
     recordBotUsage(userProfile.uid, resolvedConfig.username, `${resolvedConfig.serverIp}:${resolvedConfig.serverPort}`).catch(() => {});
@@ -298,14 +268,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
   const handleChangeUsername = (newUsername: string) => {
     sounds.playClick();
     socket?.emit('change-bot-username', newUsername);
-    try {
-      const raw = localStorage.getItem('craftbot_auto_spawn');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        parsed.username = newUsername;
-        localStorage.setItem('craftbot_auto_spawn', JSON.stringify(parsed));
-      }
-    } catch (e) {}
     if (userProfile?.uid && botState.serverIp) {
       recordBotUsage(userProfile.uid, newUsername, `${botState.serverIp}:${botState.serverPort}`).catch(() => {});
     }
@@ -324,9 +286,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
   const handleDisconnectBot = () => {
     sounds.playClick();
     if (confirm('Disconnect bot from the Minecraft server and return to launcher?')) {
-      try {
-        localStorage.removeItem('craftbot_auto_spawn');
-      } catch (e) {}
       socket?.emit('stop-bot');
       setBotState((prev) => ({
         ...prev,
@@ -340,9 +299,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
   const handleDisconnectAndSwitch = () => {
     sounds.playClick();
     if (confirm(`Disconnect ${botState.username} from ${botState.serverIp} and switch bot/server?`)) {
-      try {
-        localStorage.removeItem('craftbot_auto_spawn');
-      } catch (e) {}
       socket?.emit('stop-bot');
       setBotState((prev) => ({
         ...prev,
