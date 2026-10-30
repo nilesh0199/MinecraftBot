@@ -36,12 +36,12 @@ export let isFirebaseConfigured = false;
 // Initialize Firebase either from Vite build environment or runtime backend API
 export async function initFirebase(): Promise<boolean> {
   let cfg = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "",
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "",
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "",
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "",
-    appId: import.meta.env.VITE_FIREBASE_APP_ID || "",
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyBHrmylCUoey9-0wLZLXqAzbcqLkyHp-rM",
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "minecraftbot-639a5.firebaseapp.com",
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "minecraftbot-639a5",
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "minecraftbot-639a5.firebasestorage.app",
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "847863657346",
+    appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:847863657346:web:e0048f0bbe14a6c57c159b",
   };
 
   // If not configured in Vite env, fetch dynamically from server environment variables (/api/firebase-config)
