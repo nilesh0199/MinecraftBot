@@ -5,8 +5,12 @@ server/node_modules/
 
 # Environment files
 .env
+.env.*
+*.env
 client/.env
+client/.env.*
 server/.env
+server/.env.*
 
 # Archives & Temporary files
 *.zip
