@@ -43,6 +43,7 @@ class BotInstance {
     isFollowing = false;
     targetPlayerToFollow = null;
     onOwnerChanged;
+    onUsernameChanged;
     tempLeaveTimer = null;
     groqService = GroqChatService_1.GroqChatService.getInstance();
     constructor(userId, config, io) {
@@ -99,15 +100,22 @@ class BotInstance {
                 hideErrors: true, // Prevent raw stack traces leaking to stdout
             });
             // Defensive: Catch low-level client socket errors (e.g. ECONNRESET, broken pipes)
-            if (this.bot._client) {
-                this.bot._client.on('error', (err) => {
+            const attachClientListeners = (client) => {
+                if (!client || !client.on)
+                    return;
+                client.on('error', (err) => {
                     console.error(`[Bot ${this.config.username} Socket Error Caught]:`, err?.message);
                 });
-                // Packet heartbeat tracker (detects zombie half-open TCP connections)
-                this.bot._client.on('packet', () => {
+                client.on('packet', () => {
                     this.lastPacketTime = Date.now();
                 });
+            };
+            if (this.bot?._client) {
+                attachClientListeners(this.bot._client);
             }
+            this.bot.on('inject_allowed', () => {
+                attachClientListeners(this.bot?._client);
+            });
             // Load plugins
             this.bot.loadPlugin(mineflayer_pathfinder_1.pathfinder);
             this.bot.loadPlugin(mineflayer_auto_eat_1.plugin);
@@ -216,7 +224,12 @@ class BotInstance {
                 this.startAutoAttack();
                 this.startStateBroadcasting();
                 this.startConnectionHealthWatchdog();
-                // Broadcast initial states
+                // Broadcast initial states & hook inventory updates
+                if (this.bot && this.bot.inventory?.on) {
+                    this.bot.inventory.on('updateSlot', () => {
+                        this.broadcastInventory();
+                    });
+                }
                 this.broadcastState();
                 this.broadcastInventory();
             }
@@ -265,8 +278,21 @@ class BotInstance {
         this.bot.on('playerCollect', () => {
             this.broadcastInventory();
         });
-        this.bot.inventory.on('updateSlot', () => {
-            this.broadcastInventory();
+        // Inventory Updates (safely hook when inventory is ready or when windows open)
+        if (this.bot?.inventory?.on) {
+            this.bot.inventory.on('updateSlot', () => {
+                this.broadcastInventory();
+            });
+        }
+        this.bot.on('windowOpen', (window) => {
+            try {
+                if (window?.on) {
+                    window.on('updateSlot', () => {
+                        this.broadcastInventory();
+                    });
+                }
+            }
+            catch (e) { }
         });
         // Error & Disconnection Handling
         this.bot.on('kicked', (reason) => {
@@ -397,7 +423,7 @@ class BotInstance {
         // 1. HELP / COMMANDS (Available for everyone)
         if (lower === '!help' || lower === '!commands' || lower === '!cmds') {
             this.lastInGameCommandTime = now;
-            this.bot.chat(`[Commands] Public: !help, !sleep, !wake, !nightskip, !ask <msg>, !follow, !stop, !status | Owner (${this.config.ownerIgn}): !shutdown bot, !transfer <IGN>, !ai on/off, !dropall, !eat, !attack`);
+            this.bot.chat(`[Commands] Public: !help, !sleep, !wake, !nightskip, !ask <msg>, !follow, !stop, !status | Owner (${this.config.ownerIgn}): !rename <Name>, !shutdown bot, !transfer <IGN>, !ai on/off, !dropall, !eat, !attack`);
             return;
         }
         // 2. SLEEP IN BED (Available for everyone)
@@ -522,6 +548,25 @@ class BotInstance {
             this.broadcastState();
             this.io.to(this.userId).emit('owner-updated', { newOwner: validation.sanitized });
             this.bot.chat(`👑 [Ownership Transferred] ${oldOwner} transferred bot ownership to <${validation.sanitized}>!`);
+            return;
+        }
+        // Change Bot Username & Rejoin in 10s: !name <NewUsername> or !rename <NewUsername>
+        if (lower.startsWith('!name ') || lower.startsWith('!rename ')) {
+            this.lastInGameCommandTime = now;
+            if (!isOwner) {
+                this.bot.chat(`Sorry ${sender}, only current owner <${this.config.ownerIgn}> can change bot username!`);
+                return;
+            }
+            const parts = trimmed.split(/\s+/);
+            const targetName = parts[1]?.trim();
+            if (!targetName) {
+                this.bot.chat(`Usage: !rename <NewUsername>`);
+                return;
+            }
+            const res = this.changeUsernameAndRejoin(targetName, 10);
+            if (!res.success && res.error) {
+                this.bot.chat(`Error: ${res.error}`);
+            }
             return;
         }
         // Permanent Shutdown Command (Owner only): !shutdown bot, !poweroff bot, !terminate bot
@@ -732,6 +777,17 @@ class BotInstance {
         this.status = 'connecting';
         this.errorMessage = `Passing the night: Disconnected for ${durationSeconds}s to let players sleep. Rejoining in ${durationSeconds}s...`;
         setTimeout(() => {
+            if (this.bot) {
+                try {
+                    this.bot.removeAllListeners();
+                    if (this.bot._client) {
+                        this.bot._client.removeAllListeners();
+                    }
+                    this.bot.quit();
+                    this.bot = null;
+                }
+                catch (e) { }
+            }
             this.cleanup();
             this.broadcastState();
             this.tempLeaveTimer = setTimeout(() => {
@@ -742,6 +798,70 @@ class BotInstance {
                 this.retryNow();
             }, delayMs);
         }, 400);
+    }
+    /**
+     * Change Bot Username and Rejoin in X seconds (default 10s)
+     */
+    changeUsernameAndRejoin(newUsername, delaySeconds = 10) {
+        const validation = validator_1.SecurityValidator.validateUsername(newUsername);
+        if (!validation.valid || !validation.sanitized) {
+            const err = validation.error || 'Invalid Minecraft username. Must be 3-16 characters (letters, numbers, underscores).';
+            this.io.to(this.userId).emit('bot-error', err);
+            return { success: false, error: err };
+        }
+        const sanitizedName = validation.sanitized;
+        if (sanitizedName.toLowerCase() === this.config.username.toLowerCase()) {
+            const err = 'Bot is already using that username.';
+            this.io.to(this.userId).emit('bot-error', err);
+            return { success: false, error: err };
+        }
+        const oldName = this.config.username;
+        this.config.username = sanitizedName;
+        this.onUsernameChanged?.(sanitizedName);
+        // Wipe Groq short-term conversation context for old username
+        this.groqService.clearHistory(oldName);
+        // Announce if bot is currently online in server
+        if (this.bot && this.status === 'online') {
+            try {
+                this.bot.chat(`Changing username from ${oldName} to ${sanitizedName}. Rejoining in ${delaySeconds} seconds...`);
+            }
+            catch (e) { }
+        }
+        // Cancel existing retry timers
+        this.cancelRetryTimer();
+        if (this.tempLeaveTimer) {
+            clearTimeout(this.tempLeaveTimer);
+            this.tempLeaveTimer = null;
+        }
+        const delayMs = delaySeconds * 1000;
+        this.nextRetryAt = Date.now() + delayMs;
+        this.status = 'connecting';
+        this.errorMessage = `Changing username to ${sanitizedName}. Rejoining in ${delaySeconds}s...`;
+        this.isExplicitlyStopped = false;
+        this.retryCount = 0;
+        // Gracefully disconnect current Mineflayer bot
+        if (this.bot) {
+            try {
+                this.bot.removeAllListeners();
+                if (this.bot._client) {
+                    this.bot._client.removeAllListeners();
+                }
+                this.bot.quit();
+                this.bot = null;
+            }
+            catch (e) { }
+        }
+        this.cleanup();
+        this.broadcastState();
+        this.emitChatMessage(`Changing username to ${sanitizedName}. Rejoining in ${delaySeconds} seconds...`, undefined, true);
+        this.retryTimer = setTimeout(() => {
+            this.retryTimer = null;
+            if (this.isExplicitlyStopped)
+                return;
+            console.log(`[Bot] Rejoining server as "${sanitizedName}" after ${delaySeconds}s name change...`);
+            this.start();
+        }, delayMs);
+        return { success: true };
     }
     /**
      * Anti-AFK Routine

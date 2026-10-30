@@ -66,6 +66,10 @@ class BotManager {
             console.log(`[BotManager] Bot owner updated for user ${userId}: ${newOwner}`);
             this.saveBotToPersistence(userId, botInstance.config);
         };
+        botInstance.onUsernameChanged = (newUsername) => {
+            console.log(`[BotManager] Bot username updated for user ${userId}: ${newUsername}`);
+            this.saveBotToPersistence(userId, botInstance.config);
+        };
         this.bots.set(userId, botInstance);
         botInstance.start();
         return botInstance;

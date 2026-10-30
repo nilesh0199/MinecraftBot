@@ -237,6 +237,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
     socket?.emit('bot-night-skip');
   };
 
+  const handleChangeUsername = (newUsername: string) => {
+    sounds.playClick();
+    socket?.emit('change-bot-username', newUsername);
+    if (userProfile?.uid && botState.serverIp) {
+      recordBotUsage(userProfile.uid, newUsername, `${botState.serverIp}:${botState.serverPort}`).catch(() => {});
+    }
+  };
+
   const handleSetTimer = (minutes: number) => {
     sounds.playClick();
     socket?.emit('set-timer', minutes);
@@ -393,7 +401,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
           /* Bot is online or connecting: Full Live Dashboard */
           <>
             {/* Top HUD: Health, Hunger, Coords, Status */}
-            <HUD botState={botState} onRetryConnect={handleRetryConnect} />
+            <HUD botState={botState} onRetryConnect={handleRetryConnect} onChangeUsername={handleChangeUsername} />
 
             {/* Controls & Automation */}
             <ControlPanel

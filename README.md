@@ -48,7 +48,12 @@ A full-stack, headless Minecraft AFK bot platform with an authentic **Minecraft-
 
 ---
 
-### 👑 In-Game Ownership Transfer
+### 👑 In-Game Ownership Transfer & Dynamic Username Switch
+* **`✏️ Change` Button (HUD)**:
+  * Click the `✏️ Change` button directly beside the bot username in the dashboard HUD.
+  * Enter a new Minecraft username: the bot announces the change in chat, cleanly disconnects, updates disk persistence, and **automatically rejoins the server in 10 seconds**!
+* **`!rename <NewUsername>`**:
+  * The owner can also switch the bot's username directly via in-game Minecraft chat.
 * **`!transfer <NewOwnerIGN>`**:
   * The current owner can reassign bot ownership in-game to another player at any time.
   * Validates the player's username, broadcasts the change to the web dashboard, and saves the new owner to persistence.
@@ -79,6 +84,7 @@ A full-stack, headless Minecraft AFK bot platform with an authentic **Minecraft-
 | `!stop` / `!halt` | Public | Stops pathfinding and stays in place |
 | `!status` | Public | Reports HP, hunger, coords, dimension, and sleeping status |
 | `!shutdown bot` | **Owner Only** | Safely & permanently shuts down the bot |
+| `!rename <NewName>` | **Owner Only** | Changes bot username and rejoins in 10 seconds |
 | `!transfer <Player>` | **Owner Only** | Transfers bot ownership to another player IGN |
 | `!ai on` / `!ai off` | **Owner Only** | Enables or disables Groq AI chat companion |
 | `!dropall` / `!toss` | **Owner Only** | Drops all inventory items at the bot's feet |

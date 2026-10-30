@@ -263,6 +263,19 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Event: Change Bot Username & Rejoin in 10s from Web UI
+  socket.on('change-bot-username', (newUsername: string) => {
+    const bot = botManager.getBot(userId);
+    if (!bot) {
+      socket.emit('bot-error', 'No active bot found to rename.');
+      return;
+    }
+    const result = bot.changeUsernameAndRejoin(newUsername, 10);
+    if (!result.success && result.error) {
+      socket.emit('bot-error', result.error);
+    }
+  });
+
   // Event: Set Disconnect Timer
   socket.on('set-timer', (minutes: number) => {
     const bot = botManager.getBot(userId);

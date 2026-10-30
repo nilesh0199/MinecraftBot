@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Activity, Compass, MapPin, Wifi, Shield, Copy, Check } from 'lucide-react';
+import { Activity, Compass, MapPin, Wifi, Shield, Copy, Check, Edit3, X } from 'lucide-react';
 import { sounds } from '../../utils/audio';
 
 export interface BotState {
@@ -29,12 +29,16 @@ export interface BotState {
 interface HUDProps {
   botState: BotState;
   onRetryConnect?: () => void;
+  onChangeUsername?: (newUsername: string) => void;
 }
 
-export const HUD: React.FC<HUDProps> = ({ botState, onRetryConnect }) => {
+export const HUD: React.FC<HUDProps> = ({ botState, onRetryConnect, onChangeUsername }) => {
   const [copiedCoords, setCopiedCoords] = useState(false);
   const [damageFlash, setDamageFlash] = useState(false);
   const [countdown, setCountdown] = useState<number>(0);
+  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [newUsernameInput, setNewUsernameInput] = useState('');
+  const [renameError, setRenameError] = useState<string | null>(null);
   const prevHealthRef = useRef(botState.health);
 
   // Live countdown timer for reconnection backoff
@@ -143,6 +147,23 @@ export const HUD: React.FC<HUDProps> = ({ botState, onRetryConnect }) => {
           <div>
             <div className="flex items-center gap-2">
               <span className="font-pixel text-xs text-slate-100">{botState.username}</span>
+
+              {/* Change Username Button */}
+              {onChangeUsername && (
+                <button
+                  onClick={() => {
+                    sounds.playClick();
+                    setNewUsernameInput(botState.username);
+                    setRenameError(null);
+                    setIsRenameModalOpen(true);
+                  }}
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-mc-border bg-[#181922] hover:bg-[#252838] active:bg-[#151620] text-[10px] font-mono text-slate-300 hover:text-white transition cursor-pointer shadow-sm"
+                  title="Change bot username and rejoin server in 10s"
+                >
+                  <Edit3 className="w-2.5 h-2.5 text-mc-gold" />
+                  <span>Change</span>
+                </button>
+              )}
               <span
                 className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase ${
                   botState.status === 'online'
@@ -340,6 +361,102 @@ export const HUD: React.FC<HUDProps> = ({ botState, onRetryConnect }) => {
           </div>
         </div>
       </div>
+
+      {/* Change Bot Username Modal */}
+      {isRenameModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="mc-panel w-full max-w-md p-5 border-2 border-mc-border shadow-2xl relative bg-[#13141a]">
+            <button
+              onClick={() => {
+                sounds.playClick();
+                setIsRenameModalOpen(false);
+              }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white transition cursor-pointer"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2 mb-2 text-mc-gold font-pixel text-sm">
+              <Edit3 className="w-4 h-4" />
+              <span>Change Bot Username</span>
+            </div>
+
+            <p className="font-mono text-xs text-slate-300 mb-4 leading-relaxed">
+              Enter a new Minecraft username for your bot. The bot will disconnect, update its identity, and <strong className="text-mc-green">rejoin the server automatically in 10 seconds</strong>.
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const trimmed = newUsernameInput.trim();
+                if (!trimmed) {
+                  setRenameError('Username cannot be empty.');
+                  return;
+                }
+                if (trimmed.length < 3 || trimmed.length > 16) {
+                  setRenameError('Username must be 3-16 characters.');
+                  return;
+                }
+                if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) {
+                  setRenameError('Only letters, numbers, and underscores are allowed.');
+                  return;
+                }
+                if (trimmed.toLowerCase() === botState.username.toLowerCase()) {
+                  setRenameError('Bot is already using that username.');
+                  return;
+                }
+                sounds.playClick();
+                onChangeUsername?.(trimmed);
+                setIsRenameModalOpen(false);
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-mono uppercase text-slate-400 mb-1">
+                  New Username <span className="text-slate-500 font-normal lowercase">(3-16 characters)</span>
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  maxLength={16}
+                  value={newUsernameInput}
+                  onChange={(e) => {
+                    setNewUsernameInput(e.target.value);
+                    setRenameError(null);
+                  }}
+                  placeholder="e.g. DiamondMiner_42"
+                  className="w-full bg-[#121318] border border-mc-border px-3 py-2 text-sm text-slate-100 rounded focus:border-mc-green focus:outline-none font-mono"
+                />
+                {renameError && (
+                  <p className="text-red-400 text-xs font-mono mt-1 flex items-center gap-1">
+                    <span>⚠️</span> {renameError}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    sounds.playClick();
+                    setIsRenameModalOpen(false);
+                  }}
+                  className="px-3 py-1.5 border border-mc-border bg-[#181921] hover:bg-[#252838] font-mono text-xs text-slate-300 rounded cursor-pointer transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="mc-btn-green px-4 py-1.5 text-xs font-pixel cursor-pointer shadow-md"
+                >
+                  Rejoin in 10s
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

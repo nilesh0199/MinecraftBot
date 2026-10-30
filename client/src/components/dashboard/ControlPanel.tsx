@@ -341,6 +341,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           <div className="bg-[#161821] p-2 rounded border border-slate-800 shadow-sm">
             <span className="text-mc-gold font-pixel text-[9px] block mb-1">👑 Owner Only (&lt;{ownerIgn}&gt;):</span>
             <div className="text-slate-300 space-y-0.5">
+              <div><code>!rename &lt;Name&gt;</code> (change username & rejoin in 10s)</div>
               <div><code>!shutdown bot</code> (safely & permanently turns off bot)</div>
               <div><code>!transfer &lt;PlayerIGN&gt;</code> (transfer bot ownership)</div>
               <div><code>!ai on</code> / <code>!ai off</code> (toggle Groq AI companion)</div>

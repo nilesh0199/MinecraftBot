@@ -43,6 +43,10 @@ export class BotManager {
       console.log(`[BotManager] Bot owner updated for user ${userId}: ${newOwner}`);
       this.saveBotToPersistence(userId, botInstance.config);
     };
+    botInstance.onUsernameChanged = (newUsername: string) => {
+      console.log(`[BotManager] Bot username updated for user ${userId}: ${newUsername}`);
+      this.saveBotToPersistence(userId, botInstance.config);
+    };
     this.bots.set(userId, botInstance);
     botInstance.start();
     return botInstance;
