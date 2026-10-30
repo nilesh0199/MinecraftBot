@@ -6,7 +6,8 @@ import {
   Utensils, 
   RotateCcw, 
   Sword, 
-  Terminal
+  Terminal,
+  Bot
 } from 'lucide-react';
 
 interface ControlPanelProps {
@@ -15,10 +16,12 @@ interface ControlPanelProps {
   antiAfk: boolean;
   autoEat: boolean;
   autoAttack: boolean;
+  aiChat?: boolean;
   activeTimerRemaining?: number | null; // seconds
   onToggleAntiAfk: (enabled: boolean) => void;
   onToggleAutoEat: (enabled: boolean) => void;
   onToggleAutoAttack: (enabled: boolean) => void;
+  onToggleAiChat?: (enabled: boolean) => void;
   onFollowPlayer: (playerName: string) => void;
   onStopFollow: () => void;
   onSetTimer: (minutes: number) => void;
@@ -32,10 +35,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   antiAfk,
   autoEat,
   autoAttack,
+  aiChat = true,
   activeTimerRemaining,
   onToggleAntiAfk,
   onToggleAutoEat,
   onToggleAutoAttack,
+  onToggleAiChat,
   onFollowPlayer,
   onStopFollow,
   onSetTimer,
@@ -112,7 +117,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       </div>
 
       {/* Automation Switches */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
         {/* Anti-AFK Switch */}
         <div
           onClick={() => onToggleAntiAfk(!antiAfk)}
@@ -196,6 +201,35 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             Attacks mobs within 3 blocks
           </p>
         </div>
+
+        {/* Groq AI Chat Companion Switch */}
+        <div
+          onClick={() => onToggleAiChat && onToggleAiChat(!aiChat)}
+          className={`p-3 border rounded cursor-pointer transition-all ${
+            aiChat
+              ? 'bg-purple-950/30 border-purple-600/80'
+              : 'bg-[#121318] border-mc-border opacity-70'
+          }`}
+          title="Toggle Groq Llama-3.1 AI Chat Companion"
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="font-pixel text-[10px] text-slate-200 flex items-center gap-1.5">
+              <Bot className="w-3.5 h-3.5 text-purple-400" /> Groq AI Chat
+            </span>
+            <span
+              className={`text-[9px] font-mono px-1.5 py-0.2 rounded border ${
+                aiChat
+                  ? 'bg-purple-500 text-black font-bold border-purple-400'
+                  : 'bg-slate-800 text-slate-400 border-slate-700'
+              }`}
+            >
+              {aiChat ? 'ON' : 'OFF'}
+            </span>
+          </div>
+          <p className="text-[10px] text-slate-400 font-mono">
+            Replies to mentions &amp; !ask
+          </p>
+        </div>
       </div>
 
       {/* Disconnect Timer */}
@@ -256,7 +290,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           <div className="bg-[#161821] p-2 rounded border border-slate-800 shadow-sm">
             <span className="text-mc-diamond font-pixel text-[9px] block mb-1">🌐 Public (Anyone):</span>
             <div className="text-slate-300 space-y-0.5">
-              <div><code>!help</code> or mention bot name in chat</div>
+              <div><code>!help</code> or mention <code>@{botUsername}</code> in chat</div>
+              <div><code>!ask &lt;msg&gt;</code> (queries Groq AI companion)</div>
               <div><code>!follow</code> or <code>!come</code> (follows caller)</div>
               <div><code>!stop</code> (halt movement)</div>
               <div><code>!status</code> (reports health & coords)</div>
@@ -265,10 +300,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           <div className="bg-[#161821] p-2 rounded border border-slate-800 shadow-sm">
             <span className="text-mc-gold font-pixel text-[9px] block mb-1">👑 Owner Only (&lt;{ownerIgn}&gt;):</span>
             <div className="text-slate-300 space-y-0.5">
+              <div><code>!ai on</code> / <code>!ai off</code> (toggle Groq AI companion)</div>
               <div><code>!leave</code> or <code>!quit</code> (disconnects bot)</div>
               <div><code>!dropall</code> (safely drops inventory)</div>
-              <div><code>!eat</code> (consume food)</div>
-              <div><code>!attack</code> & <code>!antiafk</code> (toggle modes)</div>
+              <div><code>!eat</code> & <code>!attack</code> (toggle modes)</div>
             </div>
           </div>
         </div>

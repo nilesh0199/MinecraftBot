@@ -216,6 +216,15 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Event: Toggle Groq AI Chat Companion
+  socket.on('toggle-ai-chat', (enabled: boolean) => {
+    const bot = botManager.getBot(userId);
+    if (bot) {
+      bot.isAiChatActive = Boolean(enabled);
+      bot.broadcastState();
+    }
+  });
+
   // Event: Set Disconnect Timer
   socket.on('set-timer', (minutes: number) => {
     const bot = botManager.getBot(userId);
@@ -251,10 +260,10 @@ server.on('error', (err: any) => {
   }
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`===============================================`);
   console.log(` CraftBot 24/7 Cloud Manager Running!`);
-  console.log(` Server & WebSocket Gateway: http://localhost:${PORT}`);
+  console.log(` Server & WebSocket Gateway: http://0.0.0.0:${PORT}`);
   console.log(`===============================================`);
 
   // Auto-restore any active bots from previous session (e.g. after Render restart or server reboot)

@@ -46,6 +46,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
   const [antiAfk, setAntiAfk] = useState(true);
   const [autoEat, setAutoEat] = useState(true);
   const [autoAttack, setAutoAttack] = useState(false);
+  const [aiChat, setAiChat] = useState(true);
   const [timerRemaining, setTimerRemaining] = useState<number | null>(null);
   const [serverAlert, setServerAlert] = useState<string | null>(null);
 
@@ -94,6 +95,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
 
     s.on('bot-state', (state: Partial<BotState>) => {
       setBotState((prev) => ({ ...prev, ...state }));
+      if (typeof state.isAiChatActive === 'boolean') {
+        setAiChat(state.isAiChatActive);
+      }
       if (state.status === 'online') {
         setIsLaunching(false);
       }
@@ -206,6 +210,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
     sounds.playClick();
     setAutoAttack(enabled);
     socket?.emit('toggle-auto-attack', enabled);
+  };
+
+  const handleToggleAiChat = (enabled: boolean) => {
+    sounds.playClick();
+    setAiChat(enabled);
+    socket?.emit('toggle-ai-chat', enabled);
   };
 
   const handleSetTimer = (minutes: number) => {
@@ -373,10 +383,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
               antiAfk={antiAfk}
               autoEat={autoEat}
               autoAttack={autoAttack}
+              aiChat={aiChat}
               activeTimerRemaining={timerRemaining}
               onToggleAntiAfk={handleToggleAntiAfk}
               onToggleAutoEat={handleToggleAutoEat}
               onToggleAutoAttack={handleToggleAutoAttack}
+              onToggleAiChat={handleToggleAiChat}
               onFollowPlayer={handleFollowPlayer}
               onStopFollow={handleStopFollow}
               onSetTimer={handleSetTimer}

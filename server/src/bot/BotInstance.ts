@@ -3,6 +3,7 @@ import { pathfinder, Movements, goals } from 'mineflayer-pathfinder';
 import { plugin as autoEat } from 'mineflayer-auto-eat';
 import { Server as SocketServer } from 'socket.io';
 import { SecurityValidator } from '../security/validator';
+import { GroqChatService } from '../ai/GroqChatService';
 
 export interface BotConfig {
   username: string;
@@ -14,6 +15,8 @@ export interface BotConfig {
   autoEat?: boolean;
   antiAfk?: boolean;
   autoAttack?: boolean;
+  isAiChatActive?: boolean;
+  groqApiKey?: string;
 }
 
 export class BotInstance {
@@ -51,8 +54,10 @@ export class BotInstance {
   public isAntiAfkActive: boolean = true;
   public isAutoEatActive: boolean = true;
   public isAutoAttackActive: boolean = false;
+  public isAiChatActive: boolean = true;
   public isFollowing: boolean = false;
   public targetPlayerToFollow: string | null = null;
+  private groqService = GroqChatService.getInstance();
 
   constructor(userId: string, config: BotConfig, io: SocketServer) {
     this.userId = userId;
@@ -61,6 +66,7 @@ export class BotInstance {
     this.isAntiAfkActive = config.antiAfk ?? true;
     this.isAutoEatActive = config.autoEat ?? true;
     this.isAutoAttackActive = config.autoAttack ?? false;
+    this.isAiChatActive = config.isAiChatActive ?? true;
   }
 
   public start() {
@@ -424,15 +430,58 @@ export class BotInstance {
     // 1. HELP / COMMANDS (Available for everyone)
     if (lower === '!help' || lower === '!commands' || lower === '!cmds') {
       this.lastInGameCommandTime = now;
-      this.bot.chat(`[Commands] Public: !help, !follow, !stop, !status, !hi | Owner (${this.config.ownerIgn}): !leave, !dropall, !eat, !attack, !say`);
+      this.bot.chat(`[Commands] Public: !help, !ask <msg>, !follow, !stop, !status, !hi | Owner (${this.config.ownerIgn}): !ai on/off, !leave, !dropall, !eat, !attack`);
       return;
     }
 
-    // 2. GREETINGS & MENTIONS (Available for everyone)
+    // 2. AI COMPANION TOGGLE (Owner only)
+    if (lower === '!ai on' || lower === '!ai enable') {
+      this.lastInGameCommandTime = now;
+      if (!isOwner) {
+        this.bot.chat(`Sorry ${sender}, only owner <${this.config.ownerIgn}> can toggle AI mode!`);
+        return;
+      }
+      this.isAiChatActive = true;
+      this.broadcastState();
+      this.bot.chat(`[AI] Groq AI Chat Companion enabled! Talk to me with @${this.config.username} or "!ask <question>".`);
+      return;
+    }
+
+    if (lower === '!ai off' || lower === '!ai disable') {
+      this.lastInGameCommandTime = now;
+      if (!isOwner) {
+        this.bot.chat(`Sorry ${sender}, only owner <${this.config.ownerIgn}> can toggle AI mode!`);
+        return;
+      }
+      this.isAiChatActive = false;
+      this.broadcastState();
+      this.bot.chat(`[AI] Groq AI Chat Companion disabled.`);
+      return;
+    }
+
+    // 3. AI CHAT QUESTIONS (!ask <question> or !ai <question>)
+    if (lower.startsWith('!ask ') || lower.startsWith('!ai ')) {
+      this.lastInGameCommandTime = now;
+      if (!this.isAiChatActive) {
+        this.bot.chat(`[AI] AI companion is currently disabled. Ask owner to enable with "!ai on".`);
+        return;
+      }
+      const question = trimmed.replace(/^!(ask|ai)\s+/i, '');
+      this.replyWithAi(sender, question);
+      return;
+    }
+
+    // 4. GREETINGS & MENTIONS (Triggers AI companion if enabled)
     if (lower === '!hi' || lower === '!hello' || (isMention && !trimmed.startsWith('!'))) {
       this.lastInGameCommandTime = now;
-      this.bot.chat(`Hello ${sender}! I am CraftBot. Use "!help" to see available commands.`);
-      return;
+      if (this.isAiChatActive) {
+        const cleaned = trimmed.replace(new RegExp(`@?${this.config.username}`, 'gi'), '').trim();
+        this.replyWithAi(sender, cleaned || 'hello');
+        return;
+      } else {
+        this.bot.chat(`Hello ${sender}! I am CraftBot. Use "!help" to see available commands.`);
+        return;
+      }
     }
 
     // 3. FOLLOW / COME (Available for everyone)
@@ -820,6 +869,28 @@ export class BotInstance {
     }, 1000);
   }
 
+  /**
+   * Query Groq AI for an in-game reply and send to Minecraft chat
+   */
+  private async replyWithAi(sender: string, question: string) {
+    if (!this.bot || this.status !== 'online') return;
+    try {
+      const reply = await this.groqService.generateReply({
+        sender,
+        message: question,
+        botUsername: this.config.username,
+        ownerIgn: this.config.ownerIgn,
+        customApiKey: this.config.groqApiKey,
+      });
+
+      if (reply && this.bot && this.status === 'online') {
+        this.bot.chat(reply);
+      }
+    } catch (e) {
+      console.error(`[Bot ${this.config.username}] Failed to reply with AI:`, e);
+    }
+  }
+
   public broadcastState() {
     const uptimeSeconds = this.uptimeStart > 0
       ? Math.floor((Date.now() - this.uptimeStart) / 1000)
@@ -846,6 +917,7 @@ export class BotInstance {
       uptimeSeconds,
       error: this.errorMessage,
       ownerIgn: this.config.ownerIgn,
+      isAiChatActive: this.isAiChatActive,
       retryInfo: this.retryTimer ? {
         attempt: this.retryCount,
         maxAttempts: this.maxRetries,

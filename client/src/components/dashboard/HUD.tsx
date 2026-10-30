@@ -17,6 +17,7 @@ export interface BotState {
   uptimeSeconds: number;
   error?: string | null;
   ownerIgn: string;
+  isAiChatActive?: boolean;
   retryInfo?: {
     attempt: number;
     maxAttempts: number;

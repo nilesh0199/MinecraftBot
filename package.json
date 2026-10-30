@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "server/dist/index.js",
   "scripts": {
-    "start": "node server/dist/index.js",
+    "build": "npm --prefix server install && npm --prefix server run build && npm --prefix client install && npm --prefix client run build",
+    "start": "node index.js",
     "postinstall": "node -e \"const fs=require('fs'),path=require('path');const bp='node_modules/minecraft-data/minecraft-data/data/bedrock';if(fs.existsSync(bp)){fs.readdirSync(bp).forEach(f=>{if(f!=='common'){fs.rmSync(path.join(bp,f),{recursive:true,force:true});}});console.log('Freed 390MB unused Bedrock versions!');}\""
   },
   "dependencies": {
