@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { 
+  initFirebase,
   auth, 
   loginWithGoogle, 
   getUserProfile, 
@@ -44,43 +45,51 @@ export function App() {
 
   // Monitor Firebase Auth State
   useEffect(() => {
-    if (!auth) {
-      setLoading(false);
-      return;
+    let unsubscribe: (() => void) | undefined;
+
+    async function init() {
+      const configured = await initFirebase();
+      if (configured && auth) {
+        unsubscribe = onAuthStateChanged(auth, async (user) => {
+          setCurrentUser(user);
+          if (user) {
+            try {
+              const profile = await getUserProfile(user.uid);
+              if (profile && profile.ownerIgn) {
+                setUserProfile(profile);
+                setShowOnboarding(false);
+                fetchSessionToken(user.uid, profile.ownerIgn);
+              } else {
+                // New user or missing owner IGN -> show onboarding
+                setUserProfile(profile || {
+                  uid: user.uid,
+                  email: user.email,
+                  displayName: user.displayName || 'Minecraft Player',
+                  ownerIgn: '',
+                  recentBotNames: [],
+                  recentServerIp: 'localhost:25565',
+                });
+                setShowOnboarding(true);
+              }
+            } catch (err: any) {
+              console.error('Error fetching profile:', err);
+            }
+          } else {
+            setUserProfile(null);
+            setShowOnboarding(false);
+          }
+          setLoading(false);
+        });
+      } else {
+        setLoading(false);
+      }
     }
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
-      if (user) {
-        try {
-          const profile = await getUserProfile(user.uid);
-          if (profile && profile.ownerIgn) {
-            setUserProfile(profile);
-            setShowOnboarding(false);
-            fetchSessionToken(user.uid, profile.ownerIgn);
-          } else {
-            // New user or missing owner IGN -> show onboarding
-            setUserProfile(profile || {
-              uid: user.uid,
-              email: user.email,
-              displayName: user.displayName || 'Minecraft Player',
-              ownerIgn: '',
-              recentBotNames: [],
-              recentServerIp: 'localhost:25565',
-            });
-            setShowOnboarding(true);
-          }
-        } catch (err: any) {
-          console.error('Error fetching profile:', err);
-        }
-      } else {
-        setUserProfile(null);
-        setShowOnboarding(false);
-      }
-      setLoading(false);
-    });
+    init();
 
-    return () => unsubscribe();
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   // Handle Google Login with 1.21 Mace Smash Entrance Animation!

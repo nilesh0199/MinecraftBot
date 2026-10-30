@@ -1,16 +1,18 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { 
   getAuth, 
   GoogleAuthProvider, 
   signInWithPopup, 
   signOut as fbSignOut, 
+  type Auth,
   type User 
 } from 'firebase/auth';
 import { 
   getFirestore, 
   doc, 
   getDoc, 
-  setDoc 
+  setDoc,
+  type Firestore
 } from 'firebase/firestore';
 
 export interface UserProfile {
@@ -24,33 +26,61 @@ export interface UserProfile {
   updatedAt?: number;
 }
 
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "",
-};
-
-export const isFirebaseConfigured = Boolean(
-  firebaseConfig.apiKey && firebaseConfig.projectId
-);
-
-const app = !getApps().length && isFirebaseConfigured
-  ? initializeApp(firebaseConfig)
-  : getApps().length
-  ? getApp()
-  : null;
-
-export const auth = app ? getAuth(app) : null;
-export const db = app ? getFirestore(app) : null;
-
+export let app: FirebaseApp | null = null;
+export let auth: Auth | null = null;
+export let db: Firestore | null = null;
 export const googleProvider = new GoogleAuthProvider();
+
+export let isFirebaseConfigured = false;
+
+// Initialize Firebase either from Vite build environment or runtime backend API
+export async function initFirebase(): Promise<boolean> {
+  let cfg = {
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "",
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "",
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "",
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "",
+    appId: import.meta.env.VITE_FIREBASE_APP_ID || "",
+  };
+
+  // If not configured in Vite env, fetch dynamically from server environment variables (/api/firebase-config)
+  if (!cfg.apiKey || !cfg.projectId) {
+    try {
+      const res = await fetch('/api/firebase-config');
+      if (res.ok) {
+        const remoteCfg = await res.json();
+        if (remoteCfg.apiKey && remoteCfg.projectId) {
+          cfg = remoteCfg;
+        }
+      }
+    } catch {
+      // Offline or local dev fallback
+    }
+  }
+
+  if (cfg.apiKey && cfg.projectId) {
+    if (!getApps().length) {
+      app = initializeApp(cfg);
+    } else {
+      app = getApp();
+    }
+    auth = getAuth(app);
+    db = getFirestore(app);
+    isFirebaseConfigured = true;
+    return true;
+  }
+
+  isFirebaseConfigured = false;
+  return false;
+}
 
 export async function loginWithGoogle(): Promise<User | null> {
   if (!auth) {
-    throw new Error("Firebase is not configured. Please add your credentials to .env");
+    const ok = await initFirebase();
+    if (!ok || !auth) {
+      throw new Error("Firebase is not configured. Please add your credentials in HOKAS environment variables or .env");
+    }
   }
   const result = await signInWithPopup(auth, googleProvider);
   return result.user;
