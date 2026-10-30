@@ -18,6 +18,12 @@ const rateLimiter = new RateLimiter();
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
+// Enable popup communication for Firebase Google OAuth without COOP restriction
+app.use((req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  next();
+});
+
 // API: Session Token Generator for Authenticated Clients
 app.post('/api/auth/token', (req, res) => {
   const { uid, ownerIgn } = req.body;

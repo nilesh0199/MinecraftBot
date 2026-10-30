@@ -19,6 +19,11 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : (process.platfo
 const rateLimiter = new validator_1.RateLimiter();
 app.use((0, cors_1.default)({ origin: '*' }));
 app.use(express_1.default.json());
+// Enable popup communication for Firebase Google OAuth without COOP restriction
+app.use((req, res, next) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+    next();
+});
 // API: Session Token Generator for Authenticated Clients
 app.post('/api/auth/token', (req, res) => {
     const { uid, ownerIgn } = req.body;

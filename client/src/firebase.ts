@@ -3,6 +3,8 @@ import {
   getAuth, 
   GoogleAuthProvider, 
   signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
   signOut as fbSignOut, 
   setPersistence,
   inMemoryPersistence,
@@ -33,6 +35,10 @@ export let app: FirebaseApp | null = null;
 export let auth: Auth | null = null;
 export let db: Firestore | null = null;
 export const googleProvider = new GoogleAuthProvider();
+// Force Google to show account selector so user isn't locked into a denied state
+googleProvider.setCustomParameters({
+  prompt: 'select_account'
+});
 
 export let isFirebaseConfigured = false;
 
@@ -69,10 +75,11 @@ export async function initFirebase(): Promise<boolean> {
       app = getApp();
     }
     auth = getAuth(app);
-    // Enforce in-memory session persistence: refreshing browser prompts user to log in again cleanly
+    // Enforce in-memory session persistence: refreshing browser automatically clears session
     try {
       await setPersistence(auth, inMemoryPersistence);
-      await fbSignOut(auth);
+      // Check for redirect login completion if popup was redirected
+      await getRedirectResult(auth).catch(() => null);
     } catch (e) {
       console.warn('Could not set in-memory auth persistence:', e);
     }
@@ -89,11 +96,21 @@ export async function loginWithGoogle(): Promise<User | null> {
   if (!auth) {
     const ok = await initFirebase();
     if (!ok || !auth) {
-      throw new Error("Firebase is not configured. Please add your credentials in HOKAS environment variables or .env");
+      throw new Error("Firebase is not configured. Please add your credentials in Render environment variables.");
     }
   }
-  const result = await signInWithPopup(auth, googleProvider);
-  return result.user;
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
+  } catch (err: any) {
+    // If popup is blocked by Brave Shields or popup blocker, automatically fallback to redirect
+    if (err?.code === 'auth/popup-blocked') {
+      console.warn('Popup blocked, attempting redirect sign-in...');
+      await signInWithRedirect(auth, googleProvider);
+      return null;
+    }
+    throw err;
+  }
 }
 
 export async function logout(): Promise<void> {
