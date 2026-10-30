@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Package, Trash2, ArrowUpRight, Shield, Hand } from 'lucide-react';
+import { Package, Trash2, ArrowUpRight, Shield, Hand, Utensils, Zap, MessageSquare, ArrowRightLeft, X } from 'lucide-react';
 import { MinecraftTooltip } from './MinecraftTooltip';
 import { getItemMeta } from '../../utils/minecraftItems';
 import { sounds } from '../../utils/audio';
@@ -21,14 +21,60 @@ interface InventoryViewProps {
   onTossItem: (slot: number, count?: number) => void;
   onEquipItem: (slot: number, destination: 'hand' | 'off-hand' | 'head' | 'torso' | 'legs' | 'feet') => void;
   onTossAll: () => void;
+  onEatItem?: (slot: number) => void;
+  onUseItem?: (slot: number) => void;
+  onMoveItem?: (sourceSlot: number, destSlot: number) => void;
+  onShareItem?: (slot: number) => void;
   botState?: BotState;
 }
+
+const isFoodItem = (name: string): boolean => {
+  if (!name) return false;
+  const n = name.toLowerCase().replace('minecraft:', '');
+  const foods = [
+    'apple', 'golden_apple', 'enchanted_golden_apple', 'beef', 'cooked_beef',
+    'porkchop', 'cooked_porkchop', 'bread', 'golden_carrot', 'carrot',
+    'potato', 'baked_potato', 'poisonous_potato', 'mutton', 'cooked_mutton',
+    'chicken', 'cooked_chicken', 'salmon', 'cooked_salmon', 'cod', 'cooked_cod',
+    'sweet_berries', 'glow_berries', 'cookie', 'melon_slice', 'dried_kelp',
+    'pumpkin_pie', 'honey_bottle', 'mushroom_stew', 'beetroot_soup', 'rabbit_stew'
+  ];
+  return foods.includes(n) || n.includes('cooked_') || n.includes('apple') || n.includes('bread');
+};
+
+const getArmorDestination = (name: string): { destination: 'head' | 'torso' | 'legs' | 'feet'; label: string } | null => {
+  if (!name) return null;
+  const n = name.toLowerCase().replace('minecraft:', '');
+  if (n.includes('helmet') || n.includes('cap') || n.includes('turtle_helmet') || n.includes('skull') || n.includes('head')) {
+    return { destination: 'head', label: 'Wear Helmet' };
+  }
+  if (n.includes('chestplate') || n.includes('tunic') || n.includes('elytra')) {
+    return { destination: 'torso', label: 'Wear Chestplate' };
+  }
+  if (n.includes('leggings') || n.includes('pants')) {
+    return { destination: 'legs', label: 'Wear Leggings' };
+  }
+  if (n.includes('boots')) {
+    return { destination: 'feet', label: 'Wear Boots' };
+  }
+  return null;
+};
+
+const isUsableItem = (name: string): boolean => {
+  if (!name) return false;
+  const n = name.toLowerCase().replace('minecraft:', '');
+  return n.includes('potion') || n.includes('pearl') || n.includes('bucket') || n.includes('firework') || n.includes('bow');
+};
 
 export const InventoryView: React.FC<InventoryViewProps> = ({
   items,
   onTossItem,
   onEquipItem,
   onTossAll,
+  onEatItem,
+  onUseItem,
+  onMoveItem,
+  onShareItem,
   botState,
 }) => {
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -236,78 +282,274 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       </div>
 
       {/* Selected Item Actions Drawer */}
-      {selectedItem && (
-        <div className="mt-4 p-3 bg-[#13141a] border border-mc-green/40 rounded flex flex-wrap items-center justify-between gap-3 animate-in fade-in duration-100">
-          <div className="flex items-center gap-2.5">
-            <span className="text-2xl">{getItemMeta(selectedItem.name).icon}</span>
-            <div>
-              <div className="text-xs font-pixel text-mc-green">
-                {selectedItem.displayName}
+      {selectedItem && (() => {
+        const meta = getItemMeta(selectedItem.name);
+        const food = isFoodItem(selectedItem.name);
+        const armor = getArmorDestination(selectedItem.name);
+        const usable = isUsableItem(selectedItem.name);
+        const isHotbar = selectedItem.slot >= 36 && selectedItem.slot <= 44;
+        const remainingDurability = selectedItem.maxDurability 
+          ? Math.max(0, selectedItem.maxDurability - (selectedItem.durabilityUsed || 0))
+          : null;
+        const durabilityPercent = selectedItem.maxDurability && remainingDurability !== null
+          ? Math.round((remainingDurability / selectedItem.maxDurability) * 100)
+          : null;
+
+        return (
+          <div className="mt-4 p-4 bg-[#111217] border-2 border-mc-border-light rounded-lg shadow-2xl animate-in fade-in duration-150">
+            {/* Header: Item Identity & Durability */}
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-mc-border/60">
+              <div className="flex items-center gap-3">
+                <div 
+                  className="w-12 h-12 rounded bg-[#181920] border-2 flex items-center justify-center text-3xl shadow-inner select-none"
+                  style={{ borderColor: meta.rarityColor }}
+                >
+                  {meta.icon}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span 
+                      className="text-sm font-pixel font-bold drop-shadow-sm"
+                      style={{ color: meta.rarityColor }}
+                    >
+                      {selectedItem.displayName}
+                    </span>
+                    <span 
+                      className="text-[9px] font-mono px-1.5 py-0.5 rounded uppercase font-semibold border"
+                      style={{ 
+                        borderColor: `${meta.rarityColor}55`, 
+                        backgroundColor: `${meta.rarityColor}15`,
+                        color: meta.rarityColor 
+                      }}
+                    >
+                      {meta.rarity}
+                    </span>
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded uppercase bg-slate-800 text-slate-300 border border-slate-700">
+                      {meta.category}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3 mt-1 text-[11px] font-mono text-slate-400">
+                    <span>Count: <strong className="text-white">{selectedItem.count}</strong></span>
+                    <span>•</span>
+                    <span>
+                      Location: <strong className="text-slate-200">
+                        {isHotbar ? `Hotbar Slot ${selectedItem.slot - 35}` : `Slot #${selectedItem.slot}`}
+                      </strong>
+                    </span>
+                    <span>•</span>
+                    <span className="text-slate-500">{selectedItem.name}</span>
+                  </div>
+
+                  {/* Durability Bar if applicable */}
+                  {durabilityPercent !== null && remainingDurability !== null && (
+                    <div className="mt-2 flex items-center gap-2 max-w-xs">
+                      <div className="flex-1 h-1.5 bg-black/70 rounded-full overflow-hidden border border-slate-700/60">
+                        <div 
+                          className="h-full transition-all duration-300"
+                          style={{ 
+                            width: `${durabilityPercent}%`,
+                            backgroundColor: durabilityPercent > 50 ? '#10b981' : durabilityPercent > 20 ? '#f59e0b' : '#ef4444'
+                          }}
+                        />
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-400 whitespace-nowrap">
+                        {remainingDurability} / {selectedItem.maxDurability} ({durabilityPercent}%)
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="text-[11px] font-mono text-slate-400">
-                Stack: {selectedItem.count} • Slot: {selectedItem.slot}
+
+              {/* Close Button */}
+              <button
+                onClick={() => {
+                  sounds.playClick();
+                  setSelectedItem(null);
+                }}
+                className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                title="Close Drawer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Actions Grid */}
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Column 1: Drop & Toss Options */}
+              <div className="bg-[#171821] p-2.5 rounded border border-mc-border/40 flex flex-col gap-1.5">
+                <span className="text-[10px] font-pixel text-red-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                  <Trash2 className="w-3 h-3" /> Drop Items
+                </span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={() => {
+                      sounds.playPop();
+                      onTossItem(selectedItem.slot, 1);
+                      if (selectedItem.count <= 1) setSelectedItem(null);
+                    }}
+                    className="px-2.5 py-1.5 text-xs font-mono bg-[#222430] hover:bg-red-950/40 hover:border-red-700 border border-mc-border rounded text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <ArrowUpRight className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Drop 1</span>
+                  </button>
+
+                  {selectedItem.count > 1 && (
+                    <button
+                      onClick={() => {
+                        sounds.playPop();
+                        const half = Math.floor(selectedItem.count / 2);
+                        onTossItem(selectedItem.slot, half);
+                      }}
+                      className="px-2.5 py-1.5 text-xs font-mono bg-[#222430] hover:bg-red-950/40 hover:border-red-700 border border-mc-border rounded text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
+                    >
+                      <ArrowUpRight className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Drop Half ({Math.floor(selectedItem.count / 2)})</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      sounds.playPop();
+                      onTossItem(selectedItem.slot, selectedItem.count);
+                      setSelectedItem(null);
+                    }}
+                    className="px-2.5 py-1.5 text-xs font-mono bg-[#2a1a1e] hover:bg-red-900/60 border border-red-900/60 hover:border-red-500 rounded text-red-200 cursor-pointer flex items-center justify-center gap-1.5 transition-colors col-span-2"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                    <span>Drop All ({selectedItem.count})</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Column 2: Equip & Armor Options */}
+              <div className="bg-[#171821] p-2.5 rounded border border-mc-border/40 flex flex-col gap-1.5">
+                <span className="text-[10px] font-pixel text-mc-diamond uppercase tracking-wider mb-1 flex items-center gap-1">
+                  <Shield className="w-3 h-3" /> Equip & Gear
+                </span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={() => {
+                      sounds.playClick();
+                      onEquipItem(selectedItem.slot, 'hand');
+                    }}
+                    className="px-2.5 py-1.5 text-xs font-mono bg-[#222430] hover:bg-emerald-950/40 hover:border-mc-green border border-mc-border rounded text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Hand className="w-3.5 h-3.5 text-mc-green" />
+                    <span>Main Hand</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      sounds.playClick();
+                      onEquipItem(selectedItem.slot, 'off-hand');
+                    }}
+                    className="px-2.5 py-1.5 text-xs font-mono bg-[#222430] hover:bg-cyan-950/40 hover:border-mc-diamond border border-mc-border rounded text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Shield className="w-3.5 h-3.5 text-mc-diamond" />
+                    <span>Off-Hand</span>
+                  </button>
+
+                  {armor && (
+                    <button
+                      onClick={() => {
+                        sounds.playClick();
+                        onEquipItem(selectedItem.slot, armor.destination);
+                        setSelectedItem(null);
+                      }}
+                      className="px-2.5 py-1.5 text-xs font-mono bg-[#162938] hover:bg-cyan-900/60 border border-cyan-800 hover:border-cyan-400 rounded text-cyan-200 cursor-pointer flex items-center justify-center gap-1.5 transition-colors col-span-2 font-semibold"
+                    >
+                      <Shield className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>{armor.label}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Column 3: Interact & Share */}
+              <div className="bg-[#171821] p-2.5 rounded border border-mc-border/40 flex flex-col gap-1.5">
+                <span className="text-[10px] font-pixel text-mc-green uppercase tracking-wider mb-1 flex items-center gap-1">
+                  <Zap className="w-3 h-3" /> Actions & Chat
+                </span>
+                <div className="flex flex-col gap-1.5">
+                  {food && (
+                    <button
+                      onClick={() => {
+                        sounds.playClick();
+                        onEatItem?.(selectedItem.slot);
+                      }}
+                      className="px-2.5 py-1.5 text-xs font-mono bg-[#2b2113] hover:bg-amber-900/60 border border-amber-800 hover:border-amber-400 rounded text-amber-200 cursor-pointer flex items-center justify-center gap-1.5 transition-colors font-semibold"
+                    >
+                      <Utensils className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Eat Food 🍗</span>
+                    </button>
+                  )}
+
+                  {usable && (
+                    <button
+                      onClick={() => {
+                        sounds.playClick();
+                        onUseItem?.(selectedItem.slot);
+                      }}
+                      className="px-2.5 py-1.5 text-xs font-mono bg-[#26162d] hover:bg-purple-900/60 border border-purple-800 hover:border-purple-400 rounded text-purple-200 cursor-pointer flex items-center justify-center gap-1.5 transition-colors font-semibold"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Use / Activate ⚡</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      sounds.playClick();
+                      onShareItem?.(selectedItem.slot);
+                    }}
+                    className="px-2.5 py-1.5 text-xs font-mono bg-[#222430] hover:bg-[#2c2f3d] border border-mc-border rounded text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 text-mc-green" />
+                    <span>Share in Chat 💬</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Move to Hotbar (Slots 1 to 9) */}
+            <div className="mt-3 pt-2.5 border-t border-mc-border/60 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-300">
+                <ArrowRightLeft className="w-3.5 h-3.5 text-mc-green" />
+                <span>Move to Hotbar:</span>
+              </div>
+
+              <div className="flex items-center gap-1">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => {
+                  const targetSlot = 35 + num;
+                  const isCurrent = selectedItem.slot === targetSlot;
+                  return (
+                    <button
+                      key={num}
+                      onClick={() => {
+                        if (!isCurrent) {
+                          sounds.playClick();
+                          onMoveItem?.(selectedItem.slot, targetSlot);
+                          setSelectedItem(null);
+                        }
+                      }}
+                      disabled={isCurrent}
+                      className={`w-7 h-7 text-xs font-pixel rounded border transition-all cursor-pointer flex items-center justify-center ${
+                        isCurrent
+                          ? 'bg-mc-green text-black border-mc-green font-bold cursor-default'
+                          : 'bg-[#1b1c24] hover:bg-mc-green/20 hover:border-mc-green text-slate-200 border-mc-border'
+                      }`}
+                      title={`Move item to Hotbar Slot ${num} (Inventory Slot ${targetSlot})`}
+                    >
+                      {num}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => {
-                sounds.playPop();
-                onTossItem(selectedItem.slot, 1);
-                setSelectedItem(null);
-              }}
-              className="px-2.5 py-1 text-xs font-mono bg-[#22242e] hover:bg-[#2c2f3d] border border-mc-border rounded text-slate-200 cursor-pointer flex items-center gap-1"
-            >
-              <ArrowUpRight className="w-3 h-3 text-amber-400" />
-              <span>Toss 1</span>
-            </button>
-
-            <button
-              onClick={() => {
-                sounds.playPop();
-                onTossItem(selectedItem.slot, selectedItem.count);
-                setSelectedItem(null);
-              }}
-              className="px-2.5 py-1 text-xs font-mono bg-[#22242e] hover:bg-[#2c2f3d] border border-mc-border rounded text-slate-200 cursor-pointer flex items-center gap-1"
-            >
-              <Trash2 className="w-3 h-3 text-red-400" />
-              <span>Toss All</span>
-            </button>
-
-            <button
-              onClick={() => {
-                sounds.playClick();
-                onEquipItem(selectedItem.slot, 'hand');
-                setSelectedItem(null);
-              }}
-              className="px-2.5 py-1 text-xs font-mono bg-[#22242e] hover:bg-[#2c2f3d] border border-mc-border rounded text-slate-200 cursor-pointer flex items-center gap-1"
-            >
-              <Hand className="w-3 h-3 text-mc-green" />
-              <span>Hold Main Hand</span>
-            </button>
-
-            <button
-              onClick={() => {
-                sounds.playClick();
-                onEquipItem(selectedItem.slot, 'off-hand');
-                setSelectedItem(null);
-              }}
-              className="px-2.5 py-1 text-xs font-mono bg-[#22242e] hover:bg-[#2c2f3d] border border-mc-border rounded text-slate-200 cursor-pointer flex items-center gap-1"
-            >
-              <Shield className="w-3 h-3 text-mc-diamond" />
-              <span>Off-Hand</span>
-            </button>
-
-            <button
-              onClick={() => setSelectedItem(null)}
-              className="text-xs text-slate-400 hover:text-slate-200 px-2 font-mono cursor-pointer"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

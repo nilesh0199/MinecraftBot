@@ -188,6 +188,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
     }
   };
 
+  const handleEatItem = (slot: number) => {
+    sounds.playClick();
+    socket?.emit('eat-item', slot);
+  };
+
+  const handleUseItem = (slot: number) => {
+    sounds.playClick();
+    socket?.emit('use-item', slot);
+  };
+
+  const handleMoveItem = (sourceSlot: number, destSlot: number) => {
+    sounds.playClick();
+    socket?.emit('move-item', { sourceSlot, destSlot });
+  };
+
+  const handleShareItem = (slot: number) => {
+    sounds.playClick();
+    socket?.emit('share-item', slot);
+  };
+
   const handleFollowPlayer = (target: string) => {
     sounds.playClick();
     socket?.emit('follow-player', target);
@@ -444,6 +464,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
                 onTossItem={handleTossItem}
                 onEquipItem={handleEquipItem}
                 onTossAll={handleTossAll}
+                onEatItem={handleEatItem}
+                onUseItem={handleUseItem}
+                onMoveItem={handleMoveItem}
+                onShareItem={handleShareItem}
               />
             </div>
           </>

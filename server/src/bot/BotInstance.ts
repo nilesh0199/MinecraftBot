@@ -1257,6 +1257,85 @@ export class BotInstance {
       .catch((err) => console.error('Equip error:', err));
   }
 
+  /**
+   * Eat food item from specified inventory slot
+   */
+  public async eatItem(slot: number): Promise<boolean> {
+    if (!this.bot || this.status !== 'online') return false;
+    const validSlot = SecurityValidator.validateInventorySlot(slot);
+    if (!validSlot.valid) return false;
+
+    const item = this.bot.inventory?.slots?.[validSlot.sanitized!];
+    if (!item) return false;
+
+    try {
+      await this.bot.equip(item, 'hand');
+      await this.bot.consume();
+      this.broadcastState();
+      this.broadcastInventory();
+      return true;
+    } catch (err: any) {
+      console.warn(`[Bot ${this.config.username}] Eat error:`, err?.message);
+      return false;
+    }
+  }
+
+  /**
+   * Use / Activate item from specified slot (e.g. potion, pearl, bucket)
+   */
+  public async useItem(slot: number): Promise<boolean> {
+    if (!this.bot || this.status !== 'online') return false;
+    const validSlot = SecurityValidator.validateInventorySlot(slot);
+    if (!validSlot.valid) return false;
+
+    const item = this.bot.inventory?.slots?.[validSlot.sanitized!];
+    if (!item) return false;
+
+    try {
+      await this.bot.equip(item, 'hand');
+      this.bot.activateItem();
+      this.broadcastInventory();
+      return true;
+    } catch (err: any) {
+      return false;
+    }
+  }
+
+  /**
+   * Move / Swap item between inventory slots (e.g. to hotbar)
+   */
+  public async moveItem(sourceSlot: number, destSlot: number): Promise<boolean> {
+    if (!this.bot || this.status !== 'online') return false;
+    const validSrc = SecurityValidator.validateInventorySlot(sourceSlot);
+    const validDest = SecurityValidator.validateInventorySlot(destSlot);
+    if (!validSrc.valid || !validDest.valid) return false;
+
+    try {
+      await (this.bot as any).moveSlotItem(validSrc.sanitized!, validDest.sanitized!);
+      this.broadcastInventory();
+      return true;
+    } catch (err: any) {
+      console.warn(`[Bot ${this.config.username}] Move item error:`, err?.message);
+      return false;
+    }
+  }
+
+  /**
+   * Share item details in in-game Minecraft chat
+   */
+  public shareItem(slot: number) {
+    if (!this.bot || this.status !== 'online') return;
+    const validSlot = SecurityValidator.validateInventorySlot(slot);
+    if (!validSlot.valid) return;
+
+    const item = this.bot.inventory?.slots?.[validSlot.sanitized!];
+    if (!item) return;
+
+    try {
+      this.bot.chat(`[Inventory] Slot ${validSlot.sanitized}: ${item.count}x ${item.displayName || item.name}`);
+    } catch (e) {}
+  }
+
   public broadcastInventory() {
     if (!this.bot || !this.bot.inventory) return;
 

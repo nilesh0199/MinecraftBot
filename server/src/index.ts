@@ -176,6 +176,38 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Event: Eat Item
+  socket.on('eat-item', (slot: number) => {
+    const bot = botManager.getBot(userId);
+    if (bot) {
+      bot.eatItem(slot);
+    }
+  });
+
+  // Event: Use / Activate Item
+  socket.on('use-item', (slot: number) => {
+    const bot = botManager.getBot(userId);
+    if (bot) {
+      bot.useItem(slot);
+    }
+  });
+
+  // Event: Move / Swap Slot Item
+  socket.on('move-item', ({ sourceSlot, destSlot }: { sourceSlot: number; destSlot: number }) => {
+    const bot = botManager.getBot(userId);
+    if (bot) {
+      bot.moveItem(sourceSlot, destSlot);
+    }
+  });
+
+  // Event: Share Item in Chat
+  socket.on('share-item', (slot: number) => {
+    const bot = botManager.getBot(userId);
+    if (bot) {
+      bot.shareItem(slot);
+    }
+  });
+
   // Event: Follow Player
   socket.on('follow-player', (targetPlayer: string) => {
     const bot = botManager.getBot(userId);
