@@ -87,7 +87,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, isLoggingIn, 
 
         {/* Main Headline */}
         <h2 className="font-pixel text-2xl md:text-4xl text-slate-100 tracking-wide leading-tight max-w-3xl mb-6">
-          NEVER TURN OFF YOUR PC FOR <span className="text-mc-green underline decoration-mc-green/40">AFK FARMS</span> AGAIN
+          KEEP YOUR CHUNKS LOADED <span className="text-mc-green underline decoration-mc-green/40">EVEN WHILE YOU SLEEP</span>
         </h2>
 
         <p className="text-slate-300 text-base md:text-lg max-w-2xl font-normal leading-relaxed mb-10">
