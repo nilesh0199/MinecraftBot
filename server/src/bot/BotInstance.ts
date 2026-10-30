@@ -126,10 +126,15 @@ export class BotInstance {
         hideErrors: false,
       };
 
-      // Only specify version if explicitly provided and not 'auto'
-      // Omit version so mineflayer automatically negotiates protocol (e.g. protocol 774 on Aternos 1.21.11)
-      if (this.config.version && this.config.version !== 'auto') {
-        botOpts.version = this.config.version;
+      // Version optimization:
+      // If explicit version provided and not 'auto', use it.
+      // If auto or omitted for Aternos servers, bind directly to '1.21.11' to skip hanging mc.ping queries and connect in under 2 seconds!
+      let resolvedVersion = this.config.version && this.config.version !== 'auto' ? this.config.version : undefined;
+      if (!resolvedVersion && hostValidation.sanitized?.includes('aternos')) {
+        resolvedVersion = '1.21.11';
+      }
+      if (resolvedVersion) {
+        botOpts.version = resolvedVersion;
       }
 
       this.bot = mineflayer.createBot(botOpts);

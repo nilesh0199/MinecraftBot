@@ -1,5 +1,6 @@
 import express from 'express';
 import http from 'http';
+import net from 'net';
 import { Server as SocketServer } from 'socket.io';
 import cors from 'cors';
 import path from 'path';
@@ -168,6 +169,45 @@ app.get('/api/firebase-config', (req, res) => {
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET || '',
     messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
     appId: process.env.FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID || '',
+  });
+});
+
+// Diagnostic endpoint to test direct TCP connectivity from cloud host
+app.get('/api/test-connect', (req, res) => {
+  const host = (req.query.host as string) || 'ChoduCID-7CAj.aternos.me';
+  const port = parseInt((req.query.port as string) || '16808', 10);
+
+  const hostVal = SecurityValidator.validateServerHost(host);
+  if (!hostVal.valid || !hostVal.sanitized) {
+    return res.status(400).json({ error: hostVal.error });
+  }
+  const portVal = SecurityValidator.validatePort(port);
+  if (!portVal.valid || !portVal.sanitized) {
+    return res.status(400).json({ error: portVal.error });
+  }
+
+  const startTime = Date.now();
+  let finished = false;
+  const sock = net.connect(portVal.sanitized, hostVal.sanitized, () => {
+    if (finished) return;
+    finished = true;
+    const elapsed = Date.now() - startTime;
+    sock.destroy();
+    return res.json({ success: true, host: hostVal.sanitized, port: portVal.sanitized, elapsedMs: elapsed });
+  });
+
+  sock.setTimeout(6000);
+  sock.on('timeout', () => {
+    if (finished) return;
+    finished = true;
+    sock.destroy();
+    return res.json({ success: false, host: hostVal.sanitized, port: portVal.sanitized, error: 'TCP connection timed out after 6 seconds' });
+  });
+
+  sock.on('error', (err) => {
+    if (finished) return;
+    finished = true;
+    return res.json({ success: false, host: hostVal.sanitized, port: portVal.sanitized, error: err.message, code: (err as any).code });
   });
 });
 

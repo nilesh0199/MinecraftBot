@@ -309,7 +309,8 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
             onChange={(e) => setVersion(e.target.value)}
             className="w-full bg-[#121318] border border-mc-border px-3 py-2 text-xs text-slate-200 rounded focus:border-mc-green focus:outline-none font-mono cursor-pointer"
           >
-            <option value="auto">Auto-Negotiate (Latest Supported 1.21.x / 1.20.x)</option>
+            <option value="auto">Auto-Negotiate (Instant Aternos 1.21.11 / Latest)</option>
+            <option value="1.21.11">1.21.11 (Aternos 1.21.11 / Protocol 774)</option>
             <option value="1.21.1">1.21.1</option>
             <option value="1.21">1.21</option>
             <option value="1.20.4">1.20.4</option>
