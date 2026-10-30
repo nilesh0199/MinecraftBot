@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // CraftBot User Profiles Collection
+    match /users/{userId} {
+      // 1. Only the authenticated user can read their own profile, recent bots, and server IPs
+      allow read: if isOwner(userId);
+
+      // 2. Only the authenticated user can create or update their own profile document
+      allow create, update: if isOwner(userId)
+        && request.resource.data.uid == userId;
+
+      // 3. User can delete their own account data
+      allow delete: if isOwner(userId);
+    }
+
+    // Deny access to any other collections by default (Strict Least Privilege)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
