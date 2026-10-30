@@ -109,6 +109,11 @@ export async function loginWithGoogle(): Promise<User | null> {
       await signInWithRedirect(auth, googleProvider);
       return null;
     }
+    // If user closed or cancelled Google sign-in popup, return null gracefully
+    if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/user-cancelled') {
+      console.log('Google sign-in popup cancelled by user.');
+      return null;
+    }
     throw err;
   }
 }

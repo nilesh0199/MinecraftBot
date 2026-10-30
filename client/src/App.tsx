@@ -132,11 +132,13 @@ export function App() {
         setShowMaceEntrance(true);
       }
     } catch (err: any) {
-      console.warn('Login error:', err);
       const code = err?.code || '';
       if (code === 'auth/popup-closed-by-user' || code === 'auth/user-cancelled') {
-        setAuthError('Sign-in window was closed or cancelled. Please click "Sign in with Google" again.');
-      } else if (code === 'auth/popup-blocked') {
+        // User closed or dismissed the popup - harmless
+        return;
+      }
+      console.warn('Login error:', err);
+      if (code === 'auth/popup-blocked') {
         setAuthError('Pop-up was blocked by browser. Please allow popups or disable Brave Shields for this page.');
       } else if (code === 'auth/unauthorized-domain') {
         setAuthError('Domain not authorized. Add minecraftbot-yki0.onrender.com to Firebase Console > Authentication > Authorized Domains.');

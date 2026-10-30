@@ -91,15 +91,20 @@ class BotInstance {
         this.lastPacketTime = Date.now();
         this.broadcastState();
         try {
-            this.bot = mineflayer_1.default.createBot({
+            const botOpts = {
                 host: hostValidation.sanitized,
                 port: portValidation.sanitized,
                 username: userValidation.sanitized,
-                version: this.config.version || '1.21.1',
                 auth: 'offline', // Cracked server authentication
                 checkTimeoutInterval: 45000, // 45s ping timeout
-                hideErrors: true, // Prevent raw stack traces leaking to stdout
-            });
+                hideErrors: false,
+            };
+            // Only specify version if explicitly provided and not 'auto'
+            // Omit version so mineflayer automatically negotiates protocol (e.g. protocol 774 on Aternos 1.21.11)
+            if (this.config.version && this.config.version !== 'auto') {
+                botOpts.version = this.config.version;
+            }
+            this.bot = mineflayer_1.default.createBot(botOpts);
             // Defensive: Catch low-level client socket errors (e.g. ECONNRESET, broken pipes)
             const attachClientListeners = (client) => {
                 if (!client || !client.on)
