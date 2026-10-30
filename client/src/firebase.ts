@@ -4,6 +4,8 @@ import {
   GoogleAuthProvider, 
   signInWithPopup, 
   signOut as fbSignOut, 
+  setPersistence,
+  inMemoryPersistence,
   type Auth,
   type User 
 } from 'firebase/auth';
@@ -67,6 +69,13 @@ export async function initFirebase(): Promise<boolean> {
       app = getApp();
     }
     auth = getAuth(app);
+    // Enforce in-memory session persistence: refreshing browser prompts user to log in again cleanly
+    try {
+      await setPersistence(auth, inMemoryPersistence);
+      await fbSignOut(auth);
+    } catch (e) {
+      console.warn('Could not set in-memory auth persistence:', e);
+    }
     db = getFirestore(app);
     isFirebaseConfigured = true;
     return true;
