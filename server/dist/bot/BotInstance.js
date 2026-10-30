@@ -60,6 +60,11 @@ class BotInstance {
         if (this.bot) {
             this.stop();
         }
+        // Auto-correct common Aternos port digit transposition (16808 -> 16080)
+        if (this.config.serverIp && this.config.serverIp.toLowerCase().includes('choducid-7caj.aternos.me') && this.config.serverPort === 16808) {
+            console.log(`[Bot ${this.config.username}] Auto-correcting transposed Aternos port 16808 -> 16080`);
+            this.config.serverPort = 16080;
+        }
         // Security Validation 1: Hostname / IP (SSRF Protection)
         const allowLocal = process.env.ALLOW_LOCAL_SERVERS === 'true';
         const hostValidation = validator_1.SecurityValidator.validateServerHost(this.config.serverIp, allowLocal);

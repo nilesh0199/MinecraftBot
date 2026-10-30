@@ -155,7 +155,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
         if (savedSession && botState.status === 'offline' && !isLaunching) {
           const config = JSON.parse(savedSession);
           if (config && config.serverIp && config.username) {
-            console.log(`[Auto-Rejoin] Server restarted. Automatically rejoining ${config.username} into ${config.serverIp}...`);
+            // Auto-correct transposed port 16808 -> 16080
+            if (config.serverIp.toLowerCase().includes('choducid-7caj.aternos.me') && config.serverPort === 16808) {
+              config.serverPort = 16080;
+              localStorage.setItem('craftbot_auto_spawn', JSON.stringify(config));
+            }
+            console.log(`[Auto-Rejoin] Server restarted. Automatically rejoining ${config.username} into ${config.serverIp}:${config.serverPort}...`);
             setIsLaunching(true);
             socket.emit('start-bot', {
               ...config,
@@ -176,23 +181,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
     setServerAlert(null);
     sounds.playClick();
 
+    const resolvedConfig = { ...config };
+    if (resolvedConfig.serverIp.toLowerCase().includes('choducid-7caj.aternos.me') && resolvedConfig.serverPort === 16808) {
+      resolvedConfig.serverPort = 16080;
+    }
+
     // Persist session locally so dashboard auto-rejoins bot on any future server reboot/redeploy
     try {
       localStorage.setItem('craftbot_auto_spawn', JSON.stringify({
-        ...config,
+        ...resolvedConfig,
         ownerIgn: userProfile.ownerIgn,
       }));
     } catch (e) {}
 
     // Save recent bot username and server IP to Firebase (non-blocking in background)
-    recordBotUsage(userProfile.uid, config.username, `${config.serverIp}:${config.serverPort}`).catch(() => {});
+    recordBotUsage(userProfile.uid, resolvedConfig.username, `${resolvedConfig.serverIp}:${resolvedConfig.serverPort}`).catch(() => {});
 
-    setAntiAfk(config.antiAfk);
-    setAutoEat(config.autoEat);
-    setAutoAttack(config.autoAttack);
+    setAntiAfk(resolvedConfig.antiAfk);
+    setAutoEat(resolvedConfig.autoEat);
+    setAutoAttack(resolvedConfig.autoAttack);
 
     socket.emit('start-bot', {
-      ...config,
+      ...resolvedConfig,
       ownerIgn: userProfile.ownerIgn,
     });
   };
