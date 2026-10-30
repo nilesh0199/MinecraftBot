@@ -245,16 +245,32 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       </div>
 
       {/* In-Game Command Cheatsheet */}
-      <div className="p-2.5 bg-[#101115] border border-mc-border rounded text-[11px] font-mono text-slate-400">
-        <div className="text-slate-300 font-semibold mb-1 flex items-center gap-1.5">
-          <Terminal className="w-3.5 h-3.5 text-mc-green" />
-          <span>In-Game Commands (Only authorized for &lt;{ownerIgn}&gt;)</span>
+      <div className="p-3 bg-[#111217] border-2 border-mc-border rounded text-[11px] font-mono">
+        <div className="text-slate-200 font-pixel text-[10px] mb-2 flex items-center justify-between flex-wrap gap-1">
+          <span className="flex items-center gap-1.5 text-mc-green">
+            <Terminal className="w-3.5 h-3.5" /> In-Game Chat Commands & Mentions
+          </span>
+          <span className="text-[9px] text-slate-400 font-normal">Mention <strong>@{botUsername}</strong> or type <code>!help</code></span>
         </div>
-        <div className="grid grid-cols-2 gap-1 text-[10px]">
-          <div><code>!leave</code> or <code>/msg {botUsername} leave</code></div>
-          <div><code>!follow</code> or <code>/msg {botUsername} follow</code></div>
-          <div><code>!stop</code> (halt pathfinding)</div>
-          <div><code>!status</code> (whispers health & coords)</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px]">
+          <div className="bg-[#161821] p-2 rounded border border-slate-800 shadow-sm">
+            <span className="text-mc-diamond font-pixel text-[9px] block mb-1">🌐 Public (Anyone):</span>
+            <div className="text-slate-300 space-y-0.5">
+              <div><code>!help</code> or mention bot name in chat</div>
+              <div><code>!follow</code> or <code>!come</code> (follows caller)</div>
+              <div><code>!stop</code> (halt movement)</div>
+              <div><code>!status</code> (reports health & coords)</div>
+            </div>
+          </div>
+          <div className="bg-[#161821] p-2 rounded border border-slate-800 shadow-sm">
+            <span className="text-mc-gold font-pixel text-[9px] block mb-1">👑 Owner Only (&lt;{ownerIgn}&gt;):</span>
+            <div className="text-slate-300 space-y-0.5">
+              <div><code>!leave</code> or <code>!quit</code> (disconnects bot)</div>
+              <div><code>!dropall</code> (safely drops inventory)</div>
+              <div><code>!eat</code> (consume food)</div>
+              <div><code>!attack</code> & <code>!antiafk</code> (toggle modes)</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

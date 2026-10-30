@@ -85,9 +85,29 @@ export const MaceSmashAnimation: React.FC<MaceSmashAnimationProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [phase, setPhase] = useState<'launch' | 'apex' | 'slam' | 'impact' | 'done'>('launch');
   const [screenShake, setScreenShake] = useState(false);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+  const isFinishedRef = useRef(false);
+
+  const handleClose = () => {
+    if (isFinishedRef.current) return;
+    isFinishedRef.current = true;
+    setPhase('done');
+    onCompleteRef.current?.();
+  };
 
   useEffect(() => {
-    if (!autoPlay) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (!autoPlay || isFinishedRef.current) return;
 
     let timerLaunch: ReturnType<typeof setTimeout>;
     let timerApex: ReturnType<typeof setTimeout>;
@@ -96,12 +116,6 @@ export const MaceSmashAnimation: React.FC<MaceSmashAnimationProps> = ({
     let timerComplete: ReturnType<typeof setTimeout>;
 
     // Timeline of the 1.21 Mace Jump & Slam:
-    // 0ms: Wind Charge Launch (Player rockets up)
-    // 400ms: Apex (Mace raised with heavy enchantment glint)
-    // 700ms: Downward Slam Acceleration
-    // 950ms: IMPACT! Screen shake, particle blast, bass boom sound!
-    // 1800ms: Finished
-
     timerLaunch = setTimeout(() => setPhase('launch'), 50);
     timerApex = setTimeout(() => setPhase('apex'), 450);
     timerSlam = setTimeout(() => setPhase('slam'), 750);
@@ -113,9 +127,8 @@ export const MaceSmashAnimation: React.FC<MaceSmashAnimationProps> = ({
     }, 1000);
 
     timerComplete = setTimeout(() => {
-      setPhase('done');
-      onComplete?.();
-    }, 1900);
+      handleClose();
+    }, 2000);
 
     return () => {
       clearTimeout(timerLaunch);
@@ -124,7 +137,7 @@ export const MaceSmashAnimation: React.FC<MaceSmashAnimationProps> = ({
       clearTimeout(timerImpact);
       clearTimeout(timerComplete);
     };
-  }, [autoPlay, onComplete]);
+  }, [autoPlay]);
 
   // Particle Canvas for Wind Bursts, Shockwaves, and Critical Sparkles
   useEffect(() => {
@@ -229,6 +242,7 @@ export const MaceSmashAnimation: React.FC<MaceSmashAnimationProps> = ({
 
   return (
     <div
+      onClick={handleClose}
       className={`fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 transition-transform duration-75 select-none ${
         screenShake ? 'animate-[shake_0.12s_ease-in-out_infinite]' : ''
       }`}
@@ -247,9 +261,21 @@ export const MaceSmashAnimation: React.FC<MaceSmashAnimationProps> = ({
       `}</style>
 
       {/* Main Canvas Animation Container */}
-      <div className="relative w-full max-w-xl h-96 mc-panel border-4 border-mc-border shadow-2xl flex flex-col items-center justify-between overflow-hidden bg-[#0c0d11]">
+      <div 
+        onClick={(e) => e.stopPropagation()} 
+        className="relative w-full max-w-xl h-96 mc-panel border-4 border-mc-border shadow-2xl flex flex-col items-center justify-between overflow-hidden bg-[#0c0d11]"
+      >
         {/* Particle Canvas */}
         <canvas ref={canvasRef} className="absolute inset-0 z-20 pointer-events-none" />
+
+        {/* Close Button at top right */}
+        <button
+          onClick={handleClose}
+          title="Close (Esc)"
+          className="absolute top-3 right-3 z-40 w-7 h-7 bg-red-950/80 hover:bg-red-700 border-2 border-red-500/80 text-red-200 hover:text-white font-pixel text-xs flex items-center justify-center rounded shadow-lg transition-colors cursor-pointer"
+        >
+          ✕
+        </button>
 
         {/* Top Banner */}
         <div className="relative z-30 pt-4 flex items-center gap-2">

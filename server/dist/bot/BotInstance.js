@@ -25,6 +25,9 @@ class BotInstance {
     connectionHealthInterval = null;
     lastPacketTime = 0;
     lastInGameCommandTime = 0;
+    hasAnnouncedSpawn = false;
+    lastEmittedChatMessage = { text: '', time: 0 };
+    trackedDoors = new Map();
     // Automation flags
     isAntiAfkActive = true;
     isAutoEatActive = true;
@@ -135,14 +138,27 @@ class BotInstance {
                 this.status = 'online';
                 this.uptimeStart = Date.now();
                 this.errorMessage = null;
-                // Setup pathfinder movements with anti-cheat safe defaults
+                // Setup pathfinder movements with anti-cheat safe defaults & door navigation
                 if (this.bot) {
                     const defaultMove = new mineflayer_pathfinder_1.Movements(this.bot);
                     defaultMove.canDig = false; // Prevents triggering server anti-cheat for impossible mining
                     defaultMove.allow1by1towers = false;
                     defaultMove.allowFreeMotion = false;
+                    defaultMove.canOpenDoors = true; // Enables opening doors & fence gates smoothly during pathfinding
                     this.bot.pathfinder.setMovements(defaultMove);
                     this.bot.pathfinder.thinkTimeout = 8000;
+                }
+                // Spawn announcement & greeting
+                if (!this.hasAnnouncedSpawn) {
+                    this.hasAnnouncedSpawn = true;
+                    setTimeout(() => {
+                        try {
+                            if (this.bot && this.status === 'online') {
+                                this.bot.chat('CraftBot 24/7 online! Type "!help" or mention me for commands.');
+                            }
+                        }
+                        catch (e) { }
+                    }, 2500);
                 }
                 // Handle optional AuthMe auto-login
                 if (this.config.authPassword && this.bot) {
@@ -179,27 +195,19 @@ class BotInstance {
                 console.error(`[Bot ${this.config.username} Spawn Setup Error]:`, err);
             }
         });
-        // In-Game Chat Listener
+        // In-Game Chat Command Listener (commands processed without emitting duplicate UI chat)
         this.bot.on('chat', (username, message) => {
             try {
-                // Sanitize incoming message to prevent Zalgo/XSS exploits
                 const sanitizedText = validator_1.SecurityValidator.sanitizeChatMessage(message);
                 const textToDisplay = sanitizedText.sanitized || message;
-                // Broadcast to web dashboard
-                this.io.to(this.userId).emit('chat-message', {
-                    id: Math.random().toString(36).substring(2, 9),
-                    sender: username,
-                    text: textToDisplay,
-                    timestamp: Date.now(),
-                });
-                // Strict: Check for In-Game Owner Commands using verified packet sender
+                // Process in-game commands (public and owner-only)
                 this.handleInGameCommand(username, textToDisplay);
             }
             catch (err) {
                 console.error('Chat handling error:', err);
             }
         });
-        // System/Server raw messages (broadcasts, death messages, MOTD)
+        // Unified In-Game Chat & System Messages Listener with Deduplication
         this.bot.on('message', (jsonMsg) => {
             try {
                 const plainText = jsonMsg.toString();
@@ -207,19 +215,18 @@ class BotInstance {
                     return;
                 const sanitized = validator_1.SecurityValidator.sanitizeChatMessage(plainText);
                 const textToDisplay = sanitized.sanitized || plainText;
-                this.io.to(this.userId).emit('chat-message', {
-                    id: Math.random().toString(36).substring(2, 9),
-                    text: textToDisplay,
-                    raw: jsonMsg,
-                    timestamp: Date.now(),
-                    isSystem: true,
-                });
-                // Also check if this is an authentic whisper from the owner
+                // Emit single unified message to web dashboard
+                this.emitChatMessage(textToDisplay, undefined, true, jsonMsg);
+                // Check for authentic whisper commands
                 this.handleWhisperFromText(textToDisplay);
             }
             catch (err) {
                 console.error('System message handling error:', err);
             }
+        });
+        // Smart Door Handler: Automatically close doors behind the bot as it walks through
+        this.bot.on('move', () => {
+            this.handleDoorClosing();
         });
         // Health & Hunger updates
         this.bot.on('health', () => {
@@ -262,49 +269,188 @@ class BotInstance {
         });
     }
     /**
+     * Broadcast message to dashboard with deduplication protection
+     */
+    emitChatMessage(text, sender, isSystem = false, raw) {
+        const now = Date.now();
+        // Discard identical consecutive message if within 800ms
+        if (this.lastEmittedChatMessage.text === text && now - this.lastEmittedChatMessage.time < 800) {
+            return;
+        }
+        this.lastEmittedChatMessage = { text, time: now };
+        this.io.to(this.userId).emit('chat-message', {
+            id: Math.random().toString(36).substring(2, 9),
+            sender,
+            text,
+            raw,
+            timestamp: now,
+            isSystem,
+        });
+    }
+    /**
+     * Automatically detect when bot has walked through an open door, and close it behind the bot
+     */
+    handleDoorClosing() {
+        if (!this.bot || !this.bot.entity)
+            return;
+        const pos = this.bot.entity.position;
+        // Scan nearby blocks (2 block radius) for open doors/gates
+        for (let dx = -2; dx <= 2; dx++) {
+            for (let dy = -1; dy <= 2; dy++) {
+                for (let dz = -2; dz <= 2; dz++) {
+                    try {
+                        const block = this.bot.blockAt(pos.offset(dx, dy, dz));
+                        if (block && (block.name.endsWith('_door') || block.name.endsWith('_gate') || block.name.endsWith('_fence_gate'))) {
+                            const props = block.getProperties();
+                            const isOpen = props?.open === true || props?.open === 'true';
+                            const key = `${block.position.x},${block.position.y},${block.position.z}`;
+                            if (isOpen && !this.trackedDoors.has(key)) {
+                                const dist = pos.distanceTo(block.position);
+                                this.trackedDoors.set(key, {
+                                    x: block.position.x,
+                                    y: block.position.y,
+                                    z: block.position.z,
+                                    openedAt: Date.now(),
+                                    initialDist: dist,
+                                });
+                            }
+                        }
+                    }
+                    catch (e) { }
+                }
+            }
+        }
+        // Check tracked doors and close them if the bot has stepped past them
+        const now = Date.now();
+        for (const [key, tracked] of this.trackedDoors.entries()) {
+            try {
+                const doorBlock = this.bot.blockAt(new this.bot.vec3(tracked.x, tracked.y, tracked.z) || pos.offset(0, 0, 0));
+                if (!doorBlock) {
+                    this.trackedDoors.delete(key);
+                    continue;
+                }
+                const currentDist = pos.distanceTo(doorBlock.position);
+                // If bot is between 1.6 and 3.2 blocks away and further away than when it entered
+                if (currentDist > 1.6 && currentDist < 3.2 && currentDist > tracked.initialDist + 0.5) {
+                    const props = doorBlock.getProperties();
+                    if (props?.open === true || props?.open === 'true') {
+                        this.bot.activateBlock(doorBlock).catch(() => { });
+                    }
+                    this.trackedDoors.delete(key);
+                }
+                else if (currentDist >= 3.5 || now - tracked.openedAt > 8000) {
+                    this.trackedDoors.delete(key);
+                }
+            }
+            catch (e) {
+                this.trackedDoors.delete(key);
+            }
+        }
+    }
+    /**
      * Process in-game commands sent in public chat
+     * Tiered System: Common commands for everyone, Owner-only commands strictly for ownerIgn
      */
     handleInGameCommand(sender, message) {
         if (!this.bot || this.status !== 'online')
             return;
-        // Strict verification: sender must match verified owner IGN
-        const isOwner = sender.trim().toLowerCase() === this.config.ownerIgn.trim().toLowerCase();
-        if (!isOwner)
+        // Do not respond to self
+        if (sender.trim().toLowerCase() === this.config.username.trim().toLowerCase())
             return;
-        // Throttle commands (max 1 command every 1.5 seconds) to prevent command spamming
-        const now = Date.now();
-        if (now - this.lastInGameCommandTime < 1500)
-            return;
-        this.lastInGameCommandTime = now;
         const trimmed = message.trim();
-        if (trimmed.startsWith('!leave') || trimmed.startsWith('!quit') || trimmed.startsWith('!disconnect')) {
-            this.bot.chat(`Goodbye ${sender}! Disconnecting.`);
-            setTimeout(() => this.stop(), 500);
+        const lower = trimmed.toLowerCase();
+        const isOwner = sender.trim().toLowerCase() === this.config.ownerIgn.trim().toLowerCase();
+        const botNameLower = this.config.username.trim().toLowerCase();
+        const isMention = lower.includes(botNameLower) || lower.includes('@' + botNameLower);
+        // Throttle commands to prevent chat spam (min 1 second between replies)
+        const now = Date.now();
+        if (now - this.lastInGameCommandTime < 1000)
+            return;
+        // 1. HELP / COMMANDS (Available for everyone)
+        if (lower === '!help' || lower === '!commands' || lower === '!cmds') {
+            this.lastInGameCommandTime = now;
+            this.bot.chat(`[Commands] Public: !help, !follow, !stop, !status, !hi | Owner (${this.config.ownerIgn}): !leave, !dropall, !eat, !attack, !say`);
             return;
         }
-        if (trimmed.startsWith('!follow')) {
+        // 2. GREETINGS & MENTIONS (Available for everyone)
+        if (lower === '!hi' || lower === '!hello' || (isMention && !trimmed.startsWith('!'))) {
+            this.lastInGameCommandTime = now;
+            this.bot.chat(`Hello ${sender}! I am CraftBot. Use "!help" to see available commands.`);
+            return;
+        }
+        // 3. FOLLOW / COME (Available for everyone)
+        if (lower.startsWith('!follow') || lower.startsWith('!come')) {
+            this.lastInGameCommandTime = now;
             const parts = trimmed.split(/\s+/);
-            const targetName = parts[1] || sender;
+            const targetName = (isOwner && parts[1]) ? parts[1] : sender;
             this.followPlayer(targetName);
             return;
         }
-        if (trimmed.startsWith('!stop')) {
+        // 4. STOP / HALT (Available for everyone)
+        if (lower.startsWith('!stop') || lower.startsWith('!halt')) {
+            this.lastInGameCommandTime = now;
             this.stopFollow();
             this.bot.chat(`Stopped following.`);
             return;
         }
-        if (trimmed.startsWith('!status')) {
+        // 5. STATUS / INFO (Available for everyone)
+        if (lower.startsWith('!status') || lower.startsWith('!info')) {
+            this.lastInGameCommandTime = now;
             const pos = this.bot.entity?.position;
             const x = pos ? Math.round(pos.x) : 0;
             const y = pos ? Math.round(pos.y) : 0;
             const z = pos ? Math.round(pos.z) : 0;
-            this.bot.chat(`Health: ${this.bot.health}/20 | Food: ${this.bot.food}/20 | Pos: ${x}, ${y}, ${z} (${this.bot.game.dimension})`);
+            this.bot.chat(`HP: ${Math.round(this.bot.health || 20)}/20 | Food: ${Math.round(this.bot.food || 20)}/20 | Pos: ${x}, ${y}, ${z} (${this.bot.game.dimension})`);
             return;
         }
-        if (trimmed.startsWith('!drop') || trimmed.startsWith('!dropall')) {
-            this.tossAll();
-            this.bot.chat(`Dropped inventory.`);
-            return;
+        // 6. OWNER-ONLY COMMANDS:
+        if (lower.startsWith('!leave') || lower.startsWith('!quit') || lower.startsWith('!disconnect') ||
+            lower.startsWith('!drop') || lower.startsWith('!dropall') || lower.startsWith('!toss') ||
+            lower.startsWith('!eat') || lower.startsWith('!feed') ||
+            lower.startsWith('!attack') || lower.startsWith('!grind') ||
+            lower.startsWith('!antiafk') || lower.startsWith('!say')) {
+            this.lastInGameCommandTime = now;
+            if (!isOwner) {
+                this.bot.chat(`Sorry ${sender}, only owner <${this.config.ownerIgn}> can use that command!`);
+                return;
+            }
+            if (lower.startsWith('!leave') || lower.startsWith('!quit') || lower.startsWith('!disconnect')) {
+                this.bot.chat(`Goodbye ${sender}! Disconnecting as requested.`);
+                setTimeout(() => this.stop(), 500);
+                return;
+            }
+            if (lower.startsWith('!drop') || lower.startsWith('!dropall') || lower.startsWith('!toss')) {
+                this.tossAll();
+                this.bot.chat(`Dropped all inventory items.`);
+                return;
+            }
+            if (lower.startsWith('!eat') || lower.startsWith('!feed')) {
+                if (this.bot?.autoEat) {
+                    this.bot.autoEat.eat().then(() => {
+                        this.bot?.chat(`Eating food from inventory.`);
+                    }).catch(() => {
+                        this.bot?.chat(`No edible food found in inventory.`);
+                    });
+                }
+                return;
+            }
+            if (lower.startsWith('!attack') || lower.startsWith('!grind')) {
+                this.isAutoAttackActive = !this.isAutoAttackActive;
+                this.bot.chat(`Auto-attack grinder: ${this.isAutoAttackActive ? 'ENABLED' : 'DISABLED'}`);
+                return;
+            }
+            if (lower.startsWith('!antiafk')) {
+                this.isAntiAfkActive = !this.isAntiAfkActive;
+                this.bot.chat(`Anti-AFK: ${this.isAntiAfkActive ? 'ENABLED' : 'DISABLED'}`);
+                return;
+            }
+            if (lower.startsWith('!say ')) {
+                const toSay = trimmed.substring(5).trim();
+                if (toSay) {
+                    this.bot.chat(toSay);
+                }
+                return;
+            }
         }
     }
     /**

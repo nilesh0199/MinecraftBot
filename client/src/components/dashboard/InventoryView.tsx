@@ -3,6 +3,7 @@ import { Package, Trash2, ArrowUpRight, Shield, Hand } from 'lucide-react';
 import { MinecraftTooltip } from './MinecraftTooltip';
 import { getItemMeta } from '../../utils/minecraftItems';
 import { sounds } from '../../utils/audio';
+import type { BotState } from './HUD';
 
 export interface InventoryItem {
   slot: number;
@@ -20,6 +21,7 @@ interface InventoryViewProps {
   onTossItem: (slot: number, count?: number) => void;
   onEquipItem: (slot: number, destination: 'hand' | 'off-hand' | 'head' | 'torso' | 'legs' | 'feet') => void;
   onTossAll: () => void;
+  botState?: BotState;
 }
 
 export const InventoryView: React.FC<InventoryViewProps> = ({
@@ -27,6 +29,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   onTossItem,
   onEquipItem,
   onTossAll,
+  botState,
 }) => {
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [hoveredSlot, setHoveredSlot] = useState<number | null>(null);
@@ -138,7 +141,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
   return (
     <div className="mc-panel p-4 border border-mc-border shadow-lg">
-      <div className="flex items-center justify-between border-b border-mc-border pb-3 mb-4">
+      <div className="flex items-center justify-between border-b border-mc-border pb-3 mb-3">
         <div className="flex items-center gap-2">
           <Package className="w-4 h-4 text-mc-diamond" />
           <h4 className="font-pixel text-xs text-slate-100">Live Inventory</h4>
@@ -158,6 +161,56 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           <span>Drop All Items</span>
         </button>
       </div>
+
+      {/* Quick Vitals in Numbers directly visible beside Inventory without scrolling */}
+      {botState && (
+        <div className="mb-4 bg-[#111217] border-2 border-mc-border p-2.5 rounded shadow-inner flex flex-wrap items-center justify-between gap-2.5 text-xs font-mono">
+          {/* Health in Numbers */}
+          <div className="flex items-center gap-2 bg-[#1b1417] px-3 py-1.5 rounded border border-red-900/60 shadow-sm flex-1 min-w-[130px]">
+            <span className="text-red-500 text-sm animate-pulse">❤️</span>
+            <div className="flex flex-col">
+              <span className="text-[8px] font-pixel text-red-400 uppercase">HP</span>
+              <span className="font-pixel text-[11px] text-white">
+                <strong className="text-red-400">{Math.round(botState.health)}</strong> / 20
+              </span>
+            </div>
+            <div className="flex-1 h-2 bg-black/60 rounded overflow-hidden border border-red-900/40 ml-1">
+              <div 
+                className="h-full bg-red-500 transition-all duration-300"
+                style={{ width: `${Math.max(0, Math.min(100, (botState.health / 20) * 100))}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Food in Numbers */}
+          <div className="flex items-center gap-2 bg-[#1b1712] px-3 py-1.5 rounded border border-amber-900/60 shadow-sm flex-1 min-w-[130px]">
+            <span className="text-amber-500 text-sm">🍗</span>
+            <div className="flex flex-col">
+              <span className="text-[8px] font-pixel text-amber-400 uppercase">Food</span>
+              <span className="font-pixel text-[11px] text-white">
+                <strong className="text-amber-400">{Math.round(botState.food)}</strong> / 20
+              </span>
+            </div>
+            <div className="flex-1 h-2 bg-black/60 rounded overflow-hidden border border-amber-900/40 ml-1">
+              <div 
+                className="h-full bg-amber-500 transition-all duration-300"
+                style={{ width: `${Math.max(0, Math.min(100, (botState.food / 20) * 100))}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Coordinates */}
+          <div className="flex items-center gap-2 bg-[#131620] px-3 py-1.5 rounded border border-cyan-900/60 shadow-sm">
+            <span className="text-mc-diamond text-sm">🧭</span>
+            <div className="flex flex-col">
+              <span className="text-[8px] font-pixel text-cyan-400 uppercase">Coords</span>
+              <span className="font-mono text-[11px] text-slate-200">
+                X: <strong>{Math.round(botState.position.x)}</strong> Y: <strong>{Math.round(botState.position.y)}</strong> Z: <strong>{Math.round(botState.position.z)}</strong>
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col items-center">
         {/* Main Inventory: 3 Rows of 9 (Slots 9 to 35) */}

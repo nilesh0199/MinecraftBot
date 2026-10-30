@@ -99,7 +99,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
     });
 
     s.on('chat-message', (msg: ChatMessage) => {
-      setChatMessages((prev) => [...prev.slice(-150), msg]);
+      setChatMessages((prev) => {
+        // Prevent duplicate messages with identical text received in the same second
+        if (prev.length > 0) {
+          const last = prev[prev.length - 1];
+          if (last.text === msg.text && Math.abs(msg.timestamp - last.timestamp) < 1000) {
+            return prev;
+          }
+        }
+        return [...prev.slice(-150), msg];
+      });
     });
 
     s.on('inventory-update', (items: InventoryItem[]) => {
@@ -217,8 +226,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
       )}
 
       {/* Top Bar */}
-      <header className="border-b border-mc-border bg-[#14151b] px-6 py-3">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      <header className="border-b border-mc-border bg-[#14151b] px-4 sm:px-6 py-3">
+        <div className="w-full max-w-[1920px] mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-[#252830] border border-mc-border flex items-center justify-center rounded">
               <span className="text-base">🟩</span>
@@ -294,7 +303,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
+      <main className="flex-1 w-full max-w-[1920px] mx-auto p-3 sm:p-6 space-y-5">
         {botState.status === 'offline' ? (
           /* Bot is offline: Show Launcher prominently */
           <div className="max-w-xl mx-auto pt-6">
@@ -330,7 +339,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
             />
 
             {/* Split View: Live Chat & Inventory */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
               {/* Left Column: Live In-Game Chat */}
               <LiveChat
                 messages={chatMessages}
@@ -339,9 +348,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
                 ownerIgn={userProfile.ownerIgn}
               />
 
-              {/* Right Column: Interactive Minecraft Inventory */}
+              {/* Right Column: Interactive Minecraft Inventory with Quick Vitals */}
               <InventoryView
                 items={inventoryItems}
+                botState={botState}
                 onTossItem={handleTossItem}
                 onEquipItem={handleEquipItem}
                 onTossAll={handleTossAll}
