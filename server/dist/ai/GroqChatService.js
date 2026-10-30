@@ -38,25 +38,28 @@ class GroqChatService {
         this.lastCallTime.set(botUsername, now);
         // Fallback if no API key is set yet
         if (!apiKey) {
+            if (message.startsWith('!') || message.includes('?')) {
+                return `[AI Notice] GROQ_API_KEY is not configured! Add it to your Render settings to activate my AI brain.`;
+            }
             return this.getFallbackReply(sender, message, botUsername);
         }
         try {
             const historyKey = `${botUsername}:${sender.toLowerCase()}`;
             let history = this.conversationHistory.get(historyKey) || [];
-            // Keep recent context small (last 4 turns) to avoid exceeding token limits
-            if (history.length > 4) {
-                history = history.slice(-4);
+            // Keep recent context strictly short (last 3 turns / 6 messages max)
+            if (history.length > 6) {
+                history = history.slice(-6);
             }
             const systemPrompt = {
                 role: 'system',
                 content: `You are "${botUsername}", an authentic Minecraft player and helpful companion on a Java server.
 Owner: "${ownerIgn}".
 RULES:
-1. Respond to "${sender}".
-2. Keep your response strictly under 100 characters so it fits on one line in Minecraft chat.
-3. Be funny, witty, and helpful with real Minecraft knowledge (mining, crafting, mobs, Nether).
-4. Plain text only. No markdown (no asterisks, bold, hashtags, backticks). No emojis that fail in Minecraft font.
-5. Never execute or mention server exploit commands (like /op, /stop, /ban).`,
+1. Respond directly to "${sender}".
+2. Keep your response strictly under 100 characters so it fits on one line in Minecraft chat without line spam.
+3. Be witty, friendly, and authentic to Minecraft (mining, crafting, mobs, Nether, Redstone).
+4. Plain text only. No markdown (no asterisks, bold, backticks, hashtags). No emojis that fail in Minecraft font.
+5. Never execute or suggest server exploit commands (like /op, /stop, /ban).`,
             };
             const userPrompt = {
                 role: 'user',
@@ -79,18 +82,38 @@ RULES:
                 }),
             });
             if (!response.ok) {
-                const errorText = await response.text();
-                console.error(`[Groq AI] API error (${response.status}):`, errorText);
-                return this.getFallbackReply(sender, message, botUsername);
+                const status = response.status;
+                let errorDetail = '';
+                try {
+                    const errJson = await response.json();
+                    errorDetail = errJson?.error?.message || '';
+                }
+                catch {
+                    errorDetail = await response.text();
+                }
+                console.error(`[Groq AI] API error (${status}):`, errorDetail);
+                if (status === 401) {
+                    return `[AI Error] Invalid GROQ_API_KEY! Please verify your key in Render or dashboard settings.`;
+                }
+                if (status === 429) {
+                    return `[AI Busy] Groq rate limit reached! Please wait a moment before asking again.`;
+                }
+                if (status === 400) {
+                    return `[AI Error] Groq API rejected request. Try asking in simpler terms.`;
+                }
+                if (status >= 500) {
+                    return `[AI Offline] Groq Cloud AI is currently experiencing downtime. Try again shortly!`;
+                }
+                return `[AI Error] Groq service error (${status}). Please retry in a few moments.`;
             }
             const data = await response.json();
             const rawReply = data?.choices?.[0]?.message?.content;
             if (!rawReply || typeof rawReply !== 'string') {
-                return this.getFallbackReply(sender, message, botUsername);
+                return `[AI Error] Received empty response from Groq AI.`;
             }
             // Sanitize response for safe Minecraft chat
             const sanitized = this.sanitizeMinecraftChat(rawReply);
-            // Save to conversation history
+            // Save to conversation history (maintains brief context)
             history.push(userPrompt);
             history.push({ role: 'assistant', content: sanitized });
             this.conversationHistory.set(historyKey, history);
@@ -98,7 +121,29 @@ RULES:
         }
         catch (err) {
             console.error('[Groq AI] Request failed:', err?.message || err);
-            return this.getFallbackReply(sender, message, botUsername);
+            const msg = (err?.message || '').toLowerCase();
+            if (msg.includes('enotfound') || msg.includes('econnrefused') || msg.includes('network') || msg.includes('fetch')) {
+                return `[AI Error] Could not connect to Groq AI servers. Check server internet connection.`;
+            }
+            return `[AI Error] AI service error: ${err?.message || 'unknown'}. Please retry shortly.`;
+        }
+    }
+    /**
+     * Clear short-term conversation context for a bot when it disconnects or stops
+     */
+    clearHistory(botUsername) {
+        if (botUsername) {
+            const prefix = `${botUsername}:`;
+            for (const key of this.conversationHistory.keys()) {
+                if (key.startsWith(prefix)) {
+                    this.conversationHistory.delete(key);
+                }
+            }
+            console.log(`[Groq AI] Cleared short-term memory for bot "${botUsername}".`);
+        }
+        else {
+            this.conversationHistory.clear();
+            console.log(`[Groq AI] Cleared all conversation memory.`);
         }
     }
     /**

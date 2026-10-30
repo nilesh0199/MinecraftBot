@@ -1232,5 +1232,8 @@ export class BotInstance {
       this.connectionHealthInterval = null;
     }
     this.cancelDisconnectTimer();
+
+    // Wipe short-term AI conversation context on disconnect
+    this.groqService.clearHistory(this.config.username);
   }
 }
