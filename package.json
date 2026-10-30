@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "server/dist/index.js",
   "scripts": {
-    "start": "node server/dist/index.js"
+    "start": "node server/dist/index.js",
+    "postinstall": "node -e \"const fs=require('fs');const p='node_modules/minecraft-data/minecraft-data/data/bedrock';if(fs.existsSync(p)){fs.rmSync(p,{recursive:true,force:true});console.log('Freed 392MB unused Bedrock data!');}\""
   },
   "dependencies": {
     "cors": "^2.8.5",
