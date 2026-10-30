@@ -31,12 +31,8 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
   isLaunching,
   onClose,
 }) => {
-  const initialServer = (recentServerIp && recentServerIp.toLowerCase().includes('choducid-7caj.aternos.me:16808'))
-    ? 'ChoduCID-7CAj.aternos.me:16080'
-    : (recentServerIp || 'ChoduCID-7CAj.aternos.me:16080');
-
   const [username, setUsername] = useState(recentBotNames[0] || 'Bot');
-  const [serverAddress, setServerAddress] = useState(initialServer);
+  const [serverAddress, setServerAddress] = useState(recentServerIp || 'ChoduCID-7CAj.aternos.me:16808');
   const [authPassword, setAuthPassword] = useState('');
   const [version, setVersion] = useState('auto');
   const [autoEat, setAutoEat] = useState(true);

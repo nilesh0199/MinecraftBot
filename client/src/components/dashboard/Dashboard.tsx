@@ -160,9 +160,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
     sounds.playClick();
 
     const resolvedConfig = { ...config };
-    if (resolvedConfig.serverIp.toLowerCase().includes('choducid-7caj.aternos.me') && resolvedConfig.serverPort === 16808) {
-      resolvedConfig.serverPort = 16080;
-    }
 
     // Save recent bot username and server IP to Firebase (non-blocking in background)
     recordBotUsage(userProfile.uid, resolvedConfig.username, `${resolvedConfig.serverIp}:${resolvedConfig.serverPort}`).catch(() => {});
