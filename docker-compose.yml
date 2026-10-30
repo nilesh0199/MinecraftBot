@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  craftbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: craftbot-daemon
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - NODE_ENV=production
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

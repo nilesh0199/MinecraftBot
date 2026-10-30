@@ -1,0 +1,18 @@
+{
+  "name": "craftbot-24-7",
+  "version": "1.0.0",
+  "main": "server/dist/index.js",
+  "scripts": {
+    "start": "node server/dist/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mineflayer": "^4.23.0",
+    "mineflayer-auto-eat": "^3.3.6",
+    "mineflayer-pathfinder": "^2.4.5",
+    "prismarine-item": "^1.14.0",
+    "socket.io": "^4.8.1"
+  }
+}

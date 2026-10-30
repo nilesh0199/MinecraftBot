@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #0f1013;
+    color: #e2e8f0;
+  }
+
+  /* Custom scrollbar matching Minecraft UI */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #14151a;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #333642;
+    border: 1px solid #101115;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #4a4e5f;
+  }
+}
+
+@layer components {
+  /* Minecraft Stone/Wood button style */
+  .mc-btn {
+    @apply relative font-pixel text-xs tracking-wider uppercase px-4 py-3 bg-[#383b45] text-slate-100 border-2 border-[#1e2026] shadow-mc-btn transition-all duration-75 active:shadow-mc-btn-active active:translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed select-none;
+  }
+  .mc-btn-green {
+    @apply mc-btn bg-[#23924e] hover:bg-[#28a759] text-white border-[#155a30];
+  }
+  .mc-btn-red {
+    @apply mc-btn bg-[#9c2727] hover:bg-[#b82e2e] text-white border-[#5a1515];
+  }
+  .mc-btn-gold {
+    @apply mc-btn bg-[#b57a14] hover:bg-[#d48f17] text-white border-[#664307];
+  }
+
+  /* Minecraft Panel style */
+  .mc-panel {
+    @apply bg-mc-panel border-2 border-mc-border shadow-mc-panel rounded-sm;
+  }
+
+  /* Minecraft Item Slot style */
+  .mc-slot {
+    @apply w-12 h-12 bg-mc-slot border border-mc-border shadow-mc-slot flex items-center justify-center relative transition-colors duration-100 hover:border-mc-emerald hover:bg-[#1f2026];
+  }
+}
