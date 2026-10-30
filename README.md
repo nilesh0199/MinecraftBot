@@ -9,6 +9,19 @@ A full-stack, headless Minecraft AFK bot platform with an authentic **Minecraft-
 
 ---
 
+## 📸 Screenshots & Dashboard Tour
+
+### 🎛️ Real-Time Action & Automation Center
+![CraftBot Dashboard Controls](./docs/screenshots/dashboard-controls.png)
+
+### 📊 Live Vitals HUD & Session Activity
+![CraftBot HUD Vitals](./docs/screenshots/hud-vitals.png)
+
+### 💬 Synchronized In-Game Chat & Interactive 9x4 Inventory
+![CraftBot Chat & Inventory](./docs/screenshots/chat-and-inventory.png)
+
+---
+
 ## ✨ Features Overview
 
 ### ☁️ 24/7 Cloud Background & Reconnect Resilience
