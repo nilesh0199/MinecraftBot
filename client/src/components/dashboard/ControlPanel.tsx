@@ -7,7 +7,9 @@ import {
   RotateCcw, 
   Sword, 
   Terminal,
-  Bot
+  Bot,
+  Moon,
+  Sun
 } from 'lucide-react';
 
 interface ControlPanelProps {
@@ -17,11 +19,15 @@ interface ControlPanelProps {
   autoEat: boolean;
   autoAttack: boolean;
   aiChat?: boolean;
+  isSleeping?: boolean;
   activeTimerRemaining?: number | null; // seconds
   onToggleAntiAfk: (enabled: boolean) => void;
   onToggleAutoEat: (enabled: boolean) => void;
   onToggleAutoAttack: (enabled: boolean) => void;
   onToggleAiChat?: (enabled: boolean) => void;
+  onSleepInBed?: () => void;
+  onWakeUp?: () => void;
+  onNightSkip?: () => void;
   onFollowPlayer: (playerName: string) => void;
   onStopFollow: () => void;
   onSetTimer: (minutes: number) => void;
@@ -36,11 +42,15 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   autoEat,
   autoAttack,
   aiChat = true,
+  isSleeping = false,
   activeTimerRemaining,
   onToggleAntiAfk,
   onToggleAutoEat,
   onToggleAutoAttack,
   onToggleAiChat,
+  onSleepInBed,
+  onWakeUp,
+  onNightSkip,
   onFollowPlayer,
   onStopFollow,
   onSetTimer,
@@ -73,17 +83,47 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
   return (
     <div className="mc-panel p-4 border border-mc-border shadow-lg space-y-4">
-      <div className="flex items-center justify-between border-b border-mc-border pb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-mc-border pb-3">
         <h4 className="font-pixel text-xs text-slate-100 flex items-center gap-2">
           <span>⚡</span> Action & Automation Center
         </h4>
-        <button
-          onClick={onDisconnect}
-          className="mc-btn-red py-1 px-3 text-[10px] flex items-center gap-1.5 cursor-pointer"
-        >
-          <Power className="w-3.5 h-3.5" />
-          <span>Disconnect Bot</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Bed Sleeping Quick Action */}
+          {onSleepInBed && (
+            <button
+              onClick={isSleeping ? onWakeUp : onSleepInBed}
+              className={`px-2.5 py-1 text-[11px] font-pixel rounded flex items-center gap-1.5 cursor-pointer shadow transition border ${
+                isSleeping
+                  ? 'bg-amber-950/80 hover:bg-amber-900 border-amber-600/80 text-amber-200'
+                  : 'bg-indigo-950/80 hover:bg-indigo-900 border-indigo-600/80 text-indigo-200'
+              }`}
+              title={isSleeping ? "Wake up from bed" : "Find nearest bed within 24 blocks and sleep"}
+            >
+              {isSleeping ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <span>🛏️</span>}
+              <span>{isSleeping ? 'Wake Up' : 'Sleep in Bed'}</span>
+            </button>
+          )}
+
+          {/* Night Skip (1m Leave & Auto-Rejoin) */}
+          {onNightSkip && (
+            <button
+              onClick={onNightSkip}
+              className="px-2.5 py-1 text-[11px] font-pixel bg-purple-950/80 hover:bg-purple-900 border border-purple-600/80 text-purple-200 rounded flex items-center gap-1.5 cursor-pointer shadow transition"
+              title="Leave for 60 seconds so players can sleep through the night, then auto-rejoin"
+            >
+              <Moon className="w-3.5 h-3.5 text-purple-300" />
+              <span>Night Skip (1m)</span>
+            </button>
+          )}
+
+          <button
+            onClick={onDisconnect}
+            className="mc-btn-red py-1 px-3 text-[10px] flex items-center gap-1.5 cursor-pointer"
+          >
+            <Power className="w-3.5 h-3.5" />
+            <span>Disconnect</span>
+          </button>
+        </div>
       </div>
 
       {/* Follow Player Section */}
@@ -291,19 +331,20 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             <span className="text-mc-diamond font-pixel text-[9px] block mb-1">🌐 Public (Anyone):</span>
             <div className="text-slate-300 space-y-0.5">
               <div><code>!help</code> or mention <code>@{botUsername}</code> in chat</div>
+              <div><code>!sleep</code> (find nearest bed & sleep)</div>
+              <div><code>!wake</code> (wake up from bed)</div>
+              <div><code>!nightskip</code> (leaves for 1 min so you can sleep, then auto-rejoins)</div>
               <div><code>!ask &lt;msg&gt;</code> (queries Groq AI companion)</div>
-              <div><code>!follow</code> or <code>!come</code> (follows caller)</div>
-              <div><code>!stop</code> (halt movement)</div>
-              <div><code>!status</code> (reports health & coords)</div>
+              <div><code>!follow</code> / <code>!stop</code> / <code>!status</code></div>
             </div>
           </div>
           <div className="bg-[#161821] p-2 rounded border border-slate-800 shadow-sm">
             <span className="text-mc-gold font-pixel text-[9px] block mb-1">👑 Owner Only (&lt;{ownerIgn}&gt;):</span>
             <div className="text-slate-300 space-y-0.5">
+              <div><code>!shutdown bot</code> (safely & permanently turns off bot)</div>
+              <div><code>!transfer &lt;PlayerIGN&gt;</code> (transfer bot ownership)</div>
               <div><code>!ai on</code> / <code>!ai off</code> (toggle Groq AI companion)</div>
-              <div><code>!leave</code> or <code>!quit</code> (disconnects bot)</div>
-              <div><code>!dropall</code> (safely drops inventory)</div>
-              <div><code>!eat</code> & <code>!attack</code> (toggle modes)</div>
+              <div><code>!dropall</code>, <code>!eat</code>, <code>!attack</code></div>
             </div>
           </div>
         </div>

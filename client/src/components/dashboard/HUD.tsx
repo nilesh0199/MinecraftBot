@@ -18,6 +18,7 @@ export interface BotState {
   error?: string | null;
   ownerIgn: string;
   isAiChatActive?: boolean;
+  isSleeping?: boolean;
   retryInfo?: {
     attempt: number;
     maxAttempts: number;
@@ -153,6 +154,11 @@ export const HUD: React.FC<HUDProps> = ({ botState, onRetryConnect }) => {
               >
                 ● {botState.status}
               </span>
+              {botState.isSleeping && (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded border bg-indigo-950/90 text-indigo-300 border-indigo-700 flex items-center gap-1 animate-pulse">
+                  <span>🛏️</span> In Bed
+                </span>
+              )}
             </div>
             <div className="text-[11px] font-mono text-slate-400 flex items-center gap-2 mt-0.5">
               <span>{botState.serverIp}:{botState.serverPort}</span>

@@ -42,6 +42,8 @@ class BotInstance {
     isAiChatActive = true;
     isFollowing = false;
     targetPlayerToFollow = null;
+    onOwnerChanged;
+    tempLeaveTimer = null;
     groqService = GroqChatService_1.GroqChatService.getInstance();
     constructor(userId, config, io) {
         this.userId = userId;
@@ -142,6 +144,19 @@ class BotInstance {
                 this.broadcastState();
             }
             catch (e) { }
+        });
+        // 2b. Bed Sleep & Wake Events
+        this.bot.on('sleep', () => {
+            console.log(`[Bot ${this.config.username}] Bot entered bed to sleep.`);
+            this.broadcastState();
+        });
+        this.bot.on('wake', () => {
+            console.log(`[Bot ${this.config.username}] Bot woke up from bed.`);
+            try {
+                this.bot?.chat('☀️ Good morning! Woke up from bed.');
+            }
+            catch (e) { }
+            this.broadcastState();
         });
         // 3. Successful Spawn in World
         this.bot.once('spawn', () => {
@@ -382,10 +397,34 @@ class BotInstance {
         // 1. HELP / COMMANDS (Available for everyone)
         if (lower === '!help' || lower === '!commands' || lower === '!cmds') {
             this.lastInGameCommandTime = now;
-            this.bot.chat(`[Commands] Public: !help, !ask <msg>, !follow, !stop, !status, !hi | Owner (${this.config.ownerIgn}): !ai on/off, !leave, !dropall, !eat, !attack`);
+            this.bot.chat(`[Commands] Public: !help, !sleep, !wake, !nightskip, !ask <msg>, !follow, !stop, !status | Owner (${this.config.ownerIgn}): !shutdown bot, !transfer <IGN>, !ai on/off, !dropall, !eat, !attack`);
             return;
         }
-        // 2. AI COMPANION TOGGLE (Owner only)
+        // 2. SLEEP IN BED (Available for everyone)
+        if (lower === '!sleep' || lower === '!bed' || lower === '!gotosleep') {
+            this.lastInGameCommandTime = now;
+            this.goToSleep();
+            return;
+        }
+        // 3. WAKE UP FROM BED (Available for everyone)
+        if (lower === '!wake' || lower === '!wakeup') {
+            this.lastInGameCommandTime = now;
+            this.wakeUp();
+            return;
+        }
+        // 4. NIGHT SKIP (Leave for 1 minute so players can sleep, then auto-rejoin)
+        if (lower === '!nightskip' || lower === '!sleepleave' || lower === '!nap') {
+            this.lastInGameCommandTime = now;
+            this.temporarySleepLeave(60);
+            return;
+        }
+        // 5. MISUNDERSTOOD LEAVE / QUIT (Safety prompt to prevent accidental bot termination)
+        if (lower === '!leave' || lower === '!quit' || lower === '!disconnect') {
+            this.lastInGameCommandTime = now;
+            this.bot.chat(`[Notice] To let players sleep, use "!nightskip" (leaves for 1 min & auto-rejoins). To permanently shut me down, owner <${this.config.ownerIgn}> can type "!shutdown bot".`);
+            return;
+        }
+        // 6. AI COMPANION TOGGLE (Owner only)
         if (lower === '!ai on' || lower === '!ai enable') {
             this.lastInGameCommandTime = now;
             if (!isOwner) {
@@ -408,7 +447,7 @@ class BotInstance {
             this.bot.chat(`[AI] Groq AI Chat Companion disabled.`);
             return;
         }
-        // 3. AI CHAT QUESTIONS (!ask <question> or !ai <question>)
+        // 7. AI CHAT QUESTIONS (!ask <question> or !ai <question>)
         if (lower.startsWith('!ask ') || lower.startsWith('!ai ')) {
             this.lastInGameCommandTime = now;
             if (!this.isAiChatActive) {
@@ -419,7 +458,7 @@ class BotInstance {
             this.replyWithAi(sender, question);
             return;
         }
-        // 4. GREETINGS & MENTIONS (Triggers AI companion if enabled)
+        // 8. GREETINGS & MENTIONS (Triggers AI companion if enabled)
         if (lower === '!hi' || lower === '!hello' || (isMention && !trimmed.startsWith('!'))) {
             this.lastInGameCommandTime = now;
             if (this.isAiChatActive) {
@@ -432,7 +471,7 @@ class BotInstance {
                 return;
             }
         }
-        // 3. FOLLOW / COME (Available for everyone)
+        // 9. FOLLOW / COME (Available for everyone)
         if (lower.startsWith('!follow') || lower.startsWith('!come')) {
             this.lastInGameCommandTime = now;
             const parts = trimmed.split(/\s+/);
@@ -440,37 +479,69 @@ class BotInstance {
             this.followPlayer(targetName);
             return;
         }
-        // 4. STOP / HALT (Available for everyone)
+        // 10. STOP / HALT (Available for everyone)
         if (lower.startsWith('!stop') || lower.startsWith('!halt')) {
             this.lastInGameCommandTime = now;
             this.stopFollow();
             this.bot.chat(`Stopped following.`);
             return;
         }
-        // 5. STATUS / INFO (Available for everyone)
+        // 11. STATUS / INFO (Available for everyone)
         if (lower.startsWith('!status') || lower.startsWith('!info')) {
             this.lastInGameCommandTime = now;
             const pos = this.bot.entity?.position;
             const x = pos ? Math.round(pos.x) : 0;
             const y = pos ? Math.round(pos.y) : 0;
             const z = pos ? Math.round(pos.z) : 0;
-            this.bot.chat(`HP: ${Math.round(this.bot.health || 20)}/20 | Food: ${Math.round(this.bot.food || 20)}/20 | Pos: ${x}, ${y}, ${z} (${this.bot.game.dimension})`);
+            const sleepingStr = this.bot.isSleeping ? ' | Sleeping in bed 🛏️' : '';
+            this.bot.chat(`HP: ${Math.round(this.bot.health || 20)}/20 | Food: ${Math.round(this.bot.food || 20)}/20 | Pos: ${x}, ${y}, ${z} (${this.bot.game.dimension})${sleepingStr}`);
             return;
         }
-        // 6. OWNER-ONLY COMMANDS:
-        if (lower.startsWith('!leave') || lower.startsWith('!quit') || lower.startsWith('!disconnect') ||
-            lower.startsWith('!drop') || lower.startsWith('!dropall') || lower.startsWith('!toss') ||
+        // 12. OWNER-ONLY COMMANDS:
+        // Transfer Ownership: !transfer <NewOwner> or !setowner <NewOwner>
+        if (lower.startsWith('!transfer') || lower.startsWith('!setowner')) {
+            this.lastInGameCommandTime = now;
+            if (!isOwner) {
+                this.bot.chat(`Sorry ${sender}, only current owner <${this.config.ownerIgn}> can transfer ownership!`);
+                return;
+            }
+            const parts = trimmed.split(/\s+/);
+            const targetOwner = parts[1]?.trim();
+            if (!targetOwner) {
+                this.bot.chat(`Usage: !transfer <PlayerIGN>`);
+                return;
+            }
+            const validation = validator_1.SecurityValidator.validateUsername(targetOwner);
+            if (!validation.valid || !validation.sanitized) {
+                this.bot.chat(`Invalid player IGN "${targetOwner}". Ownership transfer canceled.`);
+                return;
+            }
+            const oldOwner = this.config.ownerIgn;
+            this.config.ownerIgn = validation.sanitized;
+            this.onOwnerChanged?.(validation.sanitized);
+            this.broadcastState();
+            this.io.to(this.userId).emit('owner-updated', { newOwner: validation.sanitized });
+            this.bot.chat(`👑 [Ownership Transferred] ${oldOwner} transferred bot ownership to <${validation.sanitized}>!`);
+            return;
+        }
+        // Permanent Shutdown Command (Owner only): !shutdown bot, !poweroff bot, !terminate bot
+        if (lower === '!shutdown bot' || lower === '!poweroff bot' || lower === '!terminate bot') {
+            this.lastInGameCommandTime = now;
+            if (!isOwner) {
+                this.bot.chat(`Sorry ${sender}, only owner <${this.config.ownerIgn}> can shut down this bot!`);
+                return;
+            }
+            this.bot.chat(`🛑 [Shutdown] Permanent shutdown initiated by owner <${this.config.ownerIgn}>. Disconnecting...`);
+            setTimeout(() => this.stop(), 500);
+            return;
+        }
+        if (lower.startsWith('!drop') || lower.startsWith('!dropall') || lower.startsWith('!toss') ||
             lower.startsWith('!eat') || lower.startsWith('!feed') ||
             lower.startsWith('!attack') || lower.startsWith('!grind') ||
             lower.startsWith('!antiafk') || lower.startsWith('!say')) {
             this.lastInGameCommandTime = now;
             if (!isOwner) {
                 this.bot.chat(`Sorry ${sender}, only owner <${this.config.ownerIgn}> can use that command!`);
-                return;
-            }
-            if (lower.startsWith('!leave') || lower.startsWith('!quit') || lower.startsWith('!disconnect')) {
-                this.bot.chat(`Goodbye ${sender}! Disconnecting as requested.`);
-                setTimeout(() => this.stop(), 500);
                 return;
             }
             if (lower.startsWith('!drop') || lower.startsWith('!dropall') || lower.startsWith('!toss')) {
@@ -573,6 +644,106 @@ class BotInstance {
         catch (err) { }
     }
     /**
+     * Find nearest bed within 24 blocks, walk to it, and sleep
+     */
+    async goToSleep() {
+        if (!this.bot || this.status !== 'online')
+            return;
+        if (this.bot.isSleeping) {
+            this.bot.chat('I am already sleeping in bed! zzz...');
+            return;
+        }
+        // Search for bed blocks (e.g. red_bed, white_bed, etc.)
+        const bedBlock = this.bot.findBlock({
+            matching: (block) => {
+                return Boolean(block && block.name && block.name.endsWith('_bed'));
+            },
+            maxDistance: 24,
+        });
+        if (!bedBlock) {
+            this.bot.chat('🛏️ No bed found within 24 blocks! If you need to sleep to pass the night, type "!nightskip" and I will leave for 1 minute and auto-rejoin!');
+            return;
+        }
+        this.bot.chat(`Found a bed at (${bedBlock.position.x}, ${bedBlock.position.y}, ${bedBlock.position.z}). Walking to bed...`);
+        try {
+            this.stopFollow();
+            const goal = new mineflayer_pathfinder_1.goals.GoalNear(bedBlock.position.x, bedBlock.position.y, bedBlock.position.z, 2);
+            await this.bot.pathfinder.goto(goal);
+            // Settle position
+            await new Promise((r) => setTimeout(r, 250));
+            await this.bot.sleep(bedBlock);
+            this.bot.chat('🛏️ In bed! Goodnight everyone.');
+            this.broadcastState();
+        }
+        catch (err) {
+            const msg = (err?.message || '').toLowerCase();
+            if (msg.includes('day') || msg.includes('not at night')) {
+                this.bot.chat('Can only sleep at night or during thunderstorms!');
+            }
+            else if (msg.includes('monster')) {
+                this.bot.chat('Cannot sleep now, there are monsters nearby!');
+            }
+            else if (msg.includes('occupied')) {
+                this.bot.chat('That bed is already occupied by someone else!');
+            }
+            else if (msg.includes('too far')) {
+                this.bot.chat('Bed is too far away to reach.');
+            }
+            else {
+                this.bot.chat(`Could not sleep (${msg || 'error'}). Type "!nightskip" to make me leave for 1 min.`);
+            }
+        }
+    }
+    /**
+     * Wake up from bed
+     */
+    async wakeUp() {
+        if (!this.bot || this.status !== 'online')
+            return;
+        if (!this.bot.isSleeping) {
+            this.bot.chat('I am not currently sleeping in a bed.');
+            return;
+        }
+        try {
+            await this.bot.wake();
+            this.bot.chat('Woke up from bed.');
+            this.broadcastState();
+        }
+        catch (err) {
+            this.bot.chat(`Could not wake up: ${err?.message || 'error'}`);
+        }
+    }
+    /**
+     * Temporary Sleep Leave: Disconnect for 60 seconds so players can pass the night, then auto-rejoin
+     */
+    temporarySleepLeave(durationSeconds = 60) {
+        if (this.tempLeaveTimer) {
+            clearTimeout(this.tempLeaveTimer);
+            this.tempLeaveTimer = null;
+        }
+        if (this.bot && this.status === 'online') {
+            try {
+                this.bot.chat(`🌙 Leaving for ${durationSeconds} seconds so players can sleep and pass the night! Rejoining automatically in 1 minute...`);
+            }
+            catch (e) { }
+        }
+        const delayMs = durationSeconds * 1000;
+        this.nextRetryAt = Date.now() + delayMs;
+        this.status = 'connecting';
+        this.errorMessage = `Passing the night: Disconnected for ${durationSeconds}s to let players sleep. Rejoining in ${durationSeconds}s...`;
+        setTimeout(() => {
+            this.cleanup();
+            this.broadcastState();
+            this.tempLeaveTimer = setTimeout(() => {
+                this.tempLeaveTimer = null;
+                if (this.isExplicitlyStopped)
+                    return;
+                console.log(`[Bot ${this.config.username}] 60s night-skip completed. Rejoining Minecraft server...`);
+                this.retryNow();
+            }, delayMs);
+        }, 400);
+    }
+    /**
      * Anti-AFK Routine
      */
     startAntiAfk() {
@@ -581,7 +752,7 @@ class BotInstance {
         if (!this.isAntiAfkActive)
             return;
         this.antiAfkInterval = setInterval(() => {
-            if (!this.bot || this.status !== 'online' || this.isFollowing)
+            if (!this.bot || this.status !== 'online' || this.isFollowing || this.bot.isSleeping)
                 return;
             try {
                 const randomYaw = this.bot.entity.yaw + (Math.random() * 0.4 - 0.2);
@@ -618,7 +789,7 @@ class BotInstance {
         if (!this.isAutoAttackActive)
             return;
         this.autoAttackInterval = setInterval(() => {
-            if (!this.bot || this.status !== 'online')
+            if (!this.bot || this.status !== 'online' || this.bot.isSleeping)
                 return;
             try {
                 const mobFilter = (entity) => entity.type === 'mob' &&
@@ -843,6 +1014,7 @@ class BotInstance {
             error: this.errorMessage,
             ownerIgn: this.config.ownerIgn,
             isAiChatActive: this.isAiChatActive,
+            isSleeping: Boolean(this.bot?.isSleeping),
             retryInfo: this.retryTimer ? {
                 attempt: this.retryCount,
                 maxAttempts: this.maxRetries,
@@ -904,6 +1076,10 @@ class BotInstance {
         if (this.retryTimer) {
             clearTimeout(this.retryTimer);
             this.retryTimer = null;
+        }
+        if (this.tempLeaveTimer) {
+            clearTimeout(this.tempLeaveTimer);
+            this.tempLeaveTimer = null;
         }
         this.nextRetryAt = 0;
     }

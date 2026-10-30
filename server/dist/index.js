@@ -197,6 +197,40 @@ io.on('connection', (socket) => {
             bot.broadcastState();
         }
     });
+    // Event: Find Nearest Bed & Sleep
+    socket.on('bot-sleep', () => {
+        const bot = botManager.getBot(userId);
+        if (bot) {
+            bot.goToSleep();
+        }
+    });
+    // Event: Wake Up From Bed
+    socket.on('bot-wake', () => {
+        const bot = botManager.getBot(userId);
+        if (bot) {
+            bot.wakeUp();
+        }
+    });
+    // Event: Night Skip (Disconnect for 60s to let players pass the night, then auto-rejoin)
+    socket.on('bot-night-skip', () => {
+        const bot = botManager.getBot(userId);
+        if (bot) {
+            bot.temporarySleepLeave(60);
+        }
+    });
+    // Event: Transfer Ownership from Web UI
+    socket.on('transfer-ownership', (newOwner) => {
+        const bot = botManager.getBot(userId);
+        if (bot) {
+            const validation = validator_1.SecurityValidator.validateUsername(newOwner);
+            if (validation.valid && validation.sanitized) {
+                bot.config.ownerIgn = validation.sanitized;
+                bot.onOwnerChanged?.(validation.sanitized);
+                bot.broadcastState();
+                socket.emit('owner-updated', { newOwner: validation.sanitized });
+            }
+        }
+    });
     // Event: Set Disconnect Timer
     socket.on('set-timer', (minutes) => {
         const bot = botManager.getBot(userId);

@@ -39,6 +39,10 @@ export class BotManager {
    */
   private spawnInternal(userId: string, config: BotConfig): BotInstance {
     const botInstance = new BotInstance(userId, config, this.io);
+    botInstance.onOwnerChanged = (newOwner: string) => {
+      console.log(`[BotManager] Bot owner updated for user ${userId}: ${newOwner}`);
+      this.saveBotToPersistence(userId, botInstance.config);
+    };
     this.bots.set(userId, botInstance);
     botInstance.start();
     return botInstance;

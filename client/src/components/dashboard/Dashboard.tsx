@@ -134,6 +134,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
       setServerAlert(`Minecraft server at ${data.serverIp}:${data.serverPort} is offline (failed after ${data.attempts} attempts). Click Spawn when your server is back online.`);
     });
 
+    s.on('owner-updated', (data: { newOwner: string }) => {
+      setBotState((prev) => ({ ...prev, ownerIgn: data.newOwner }));
+    });
+
     setSocket(s);
 
     return () => {
@@ -216,6 +220,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
     sounds.playClick();
     setAiChat(enabled);
     socket?.emit('toggle-ai-chat', enabled);
+  };
+
+  const handleSleepInBed = () => {
+    sounds.playClick();
+    socket?.emit('bot-sleep');
+  };
+
+  const handleWakeUp = () => {
+    sounds.playClick();
+    socket?.emit('bot-wake');
+  };
+
+  const handleNightSkip = () => {
+    sounds.playClick();
+    socket?.emit('bot-night-skip');
   };
 
   const handleSetTimer = (minutes: number) => {
@@ -384,11 +403,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
               autoEat={autoEat}
               autoAttack={autoAttack}
               aiChat={aiChat}
+              isSleeping={botState.isSleeping}
               activeTimerRemaining={timerRemaining}
               onToggleAntiAfk={handleToggleAntiAfk}
               onToggleAutoEat={handleToggleAutoEat}
               onToggleAutoAttack={handleToggleAutoAttack}
               onToggleAiChat={handleToggleAiChat}
+              onSleepInBed={handleSleepInBed}
+              onWakeUp={handleWakeUp}
+              onNightSkip={handleNightSkip}
               onFollowPlayer={handleFollowPlayer}
               onStopFollow={handleStopFollow}
               onSetTimer={handleSetTimer}

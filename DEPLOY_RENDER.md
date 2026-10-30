@@ -66,13 +66,17 @@ Render's free tier spins down after 15 minutes of inactivity. Pinging `/health` 
 | Command | Permission | Description |
 | :--- | :--- | :--- |
 | `!help` | Public | Lists all available in-game commands |
+| `!sleep` / `!bed` | Public | Scans for nearest bed (24 blocks), walks to it, and sleeps |
+| `!wake` / `!wakeup` | Public | Wakes the bot up from bed |
+| `!nightskip` / `!nap` | Public | Disconnects for 60s so players can sleep, then auto-rejoins |
 | `!ask <question>` | Public | Asks the Groq AI Companion a question |
 | `@{bot}` / `!hi` | Public | Greets the bot or chats with AI |
 | `!follow` / `!come` | Public | Follows the player calling the bot |
 | `!stop` / `!halt` | Public | Stops following and stays in place |
-| `!status` | Public | Reports bot health, hunger, coordinates, dimension |
+| `!status` | Public | Reports bot health, hunger, coordinates, and bed status |
+| `!shutdown bot` | **Owner Only** | Safely & permanently shuts down the bot |
+| `!transfer <Player>` | **Owner Only** | Transfers bot ownership to another player IGN |
 | `!ai on` / `!ai off` | **Owner Only** | Enables or disables Groq AI chat companion |
-| `!leave` / `!quit` | **Owner Only** | Safely disconnects the bot from the server |
 | `!dropall` / `!toss` | **Owner Only** | Drops all inventory items at the bot's feet |
 | `!eat` | **Owner Only** | Consumes food from inventory |
 | `!attack` | **Owner Only** | Toggles mob farm auto-attack |
