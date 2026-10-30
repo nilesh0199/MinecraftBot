@@ -357,7 +357,4 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(` CraftBot 24/7 Cloud Manager Running!`);
   console.log(` Server & WebSocket Gateway: http://0.0.0.0:${PORT}`);
   console.log(`===============================================`);
-
-  // Auto-restore any active bots from previous session (e.g. after Render restart or server reboot)
-  botManager.restoreSavedBots();
 });
