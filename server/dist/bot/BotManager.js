@@ -105,7 +105,7 @@ class BotManager {
                 error: 'Please wait a few seconds before spawning or restarting your bot.',
             };
         }
-        // 2. Global Bot Limit (protect Oracle Cloud VM RAM from exhaustion)
+        // 2. Global Bot Limit (protect cloud container RAM from exhaustion)
         if (!this.bots.has(userId) && this.bots.size >= MAX_GLOBAL_BOTS) {
             return {
                 success: false,

@@ -124,7 +124,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, isLoggingIn, 
           )}
 
           <p className="text-xs text-slate-500 font-mono mt-2">
-            Free & Open Source • Designed to run 24/7 on Oracle Cloud Free Tier
+            Free & Open Source • Designed to run 24/7 in the Cloud
           </p>
         </div>
 
@@ -265,7 +265,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, isLoggingIn, 
         <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <p>© 2024 CraftBot 24/7. Not an official Minecraft product. Not approved by or associated with Mojang.</p>
           <div className="flex items-center gap-4 text-slate-400">
-            <span>Oracle Cloud Ready</span>
+            <span>24/7 Cloud Ready</span>
             <span>•</span>
             <span>Cracked & Offline</span>
           </div>
