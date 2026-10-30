@@ -4,7 +4,7 @@
   "main": "server/dist/index.js",
   "scripts": {
     "start": "node server/dist/index.js",
-    "postinstall": "node -e \"const fs=require('fs');const p='node_modules/minecraft-data/minecraft-data/data/bedrock';if(fs.existsSync(p)){fs.rmSync(p,{recursive:true,force:true});console.log('Freed 392MB unused Bedrock data!');}\""
+    "postinstall": "node -e \"const fs=require('fs'),path=require('path');const bp='node_modules/minecraft-data/minecraft-data/data/bedrock';if(fs.existsSync(bp)){fs.readdirSync(bp).forEach(f=>{if(f!=='common'){fs.rmSync(path.join(bp,f),{recursive:true,force:true});}});console.log('Freed 390MB unused Bedrock versions!');}\""
   },
   "dependencies": {
     "cors": "^2.8.5",
