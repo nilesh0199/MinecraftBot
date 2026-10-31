@@ -630,6 +630,15 @@ export class BotInstance {
     if (!this.bot || this.status !== 'online' || !this.bot.entity) return;
     if (this.bot.isSleeping) return;
 
+    // SmartDoor should only operate when actively following or pathfinding
+    const isActivelyNavigating = this.isFollowing || Boolean((this.bot as any).pathfinder?.isMoving?.());
+    if (!isActivelyNavigating) {
+      if (this.trackedDoors.size > 0) {
+        this.trackedDoors.clear();
+      }
+      return;
+    }
+
     const pos = this.bot.entity.position;
     const now = Date.now();
 

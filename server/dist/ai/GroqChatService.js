@@ -52,8 +52,7 @@ class GroqChatService {
                     'openai/gpt-oss-20b',
                     'llama-3.3-70b-versatile',
                     'llama-3.1-8b-instant',
-                    'llama3-8b-8192',
-                    'llama3-70b-8192',
+                    'qwen/qwen3.8-27b',
                     'mixtral-8x7b-32768',
                     'gemma2-9b-it',
                 ];
@@ -158,23 +157,20 @@ RULES:
                             },
                             body: JSON.stringify(bodyPayload),
                         });
-                        if (response.ok) {
-                            const data = await response.json();
-                            rawReply = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.message?.reasoning_content;
-                            if (rawReply) {
+                        const isOk = response.ok;
+                        const resJson = await response.json().catch(() => null);
+                        if (isOk && resJson) {
+                            const choice = resJson?.choices?.[0];
+                            rawReply = choice?.message?.content ||
+                                choice?.message?.reasoning_content ||
+                                choice?.text;
+                            if (rawReply && typeof rawReply === 'string' && rawReply.trim().length > 0) {
                                 this.activeModel = modelToTry;
                                 break;
                             }
                         }
                         lastErrorStatus = response.status;
-                        let errorDetail = '';
-                        try {
-                            const errJson = await response.json();
-                            errorDetail = errJson?.error?.message || '';
-                        }
-                        catch {
-                            errorDetail = await response.text();
-                        }
+                        const errorDetail = resJson?.error?.message || (resJson ? JSON.stringify(resJson) : 'Unknown response');
                         console.warn(`[Groq AI] Model "${modelToTry}" (${tokenParam}) returned ${response.status}: ${errorDetail}`);
                         // Auth error: stop immediately
                         if (response.status === 401) {
