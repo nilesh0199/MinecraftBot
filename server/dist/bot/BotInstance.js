@@ -20,6 +20,8 @@ class BotInstance {
     // Timers & intervals
     antiAfkInterval = null;
     autoAttackInterval = null;
+    autoEatWatcherInterval = null;
+    isEatingFallback = false;
     disconnectTimer = null;
     disconnectTimerEnd = null;
     stateBroadcastInterval = null;
@@ -307,17 +309,44 @@ class BotInstance {
                         }
                     }, 1200);
                 }
-                // Configure auto-eat
-                if (this.isAutoEatActive && this.bot?.autoEat) {
+                // Configure auto-eat plugin with optimal options & listeners
+                if (this.bot?.autoEat) {
                     this.bot.autoEat.options = {
                         priority: 'foodPoints',
-                        startAt: 14,
-                        bannedFood: ['rotten_flesh', 'spider_eye', 'poisonous_potato', 'pufferfish'],
+                        startAt: 16,
+                        eatingTimeout: 3000,
+                        bannedFood: ['rotten_flesh', 'spider_eye', 'poisonous_potato', 'pufferfish', 'chorus_fruit', 'suspicious_stew'],
+                        ignoreInventoryCheck: true,
+                        checkOnItemPickup: true,
+                        offhand: true,
+                        equipOldItem: true,
                     };
+                    if (this.isAutoEatActive) {
+                        this.bot.autoEat.enable();
+                    }
+                    else {
+                        this.bot.autoEat.disable();
+                    }
+                    this.bot.on('autoeat_started', (item, offhand) => {
+                        console.log(`[Bot ${this.config.username}] Auto-eating ${item?.name || 'food'} (${offhand ? 'offhand' : 'main hand'})...`);
+                        this.emitChatMessage(`🍖 Auto-eating ${item?.name || 'food'}...`, undefined, true);
+                    });
+                    this.bot.on('autoeat_finished', (item) => {
+                        console.log(`[Bot ${this.config.username}] Finished eating ${item?.name || 'food'}. Food: ${this.bot?.food}/20`);
+                        this.emitChatMessage(`✅ Finished eating ${item?.name || 'food'}. Hunger: ${this.bot?.food}/20`, undefined, true);
+                        this.broadcastState();
+                    });
+                    this.bot.on('autoeat_error', (err) => {
+                        // If plugin failed, try our direct fallback eater
+                        if (this.isAutoEatActive && this.bot && this.bot.food <= 16) {
+                            this.manualEatFood();
+                        }
+                    });
                 }
                 // Start automation and state broadcasting loops
                 this.startAntiAfk();
                 this.startAutoAttack();
+                this.startAutoEatWatcher();
                 this.startStateBroadcasting();
                 // Broadcast initial states & hook inventory updates
                 if (this.bot && this.bot.inventory?.on) {
@@ -790,13 +819,7 @@ class BotInstance {
                 return;
             }
             if (lower.startsWith('!eat') || lower.startsWith('!feed')) {
-                if (this.bot?.autoEat) {
-                    this.bot.autoEat.eat().then(() => {
-                        this.bot?.chat(`Eating food from inventory.`);
-                    }).catch(() => {
-                        this.bot?.chat(`No edible food found in inventory.`);
-                    });
-                }
+                this.triggerEatFood();
                 return;
             }
             if (lower.startsWith('!attack') || lower.startsWith('!grind')) {
@@ -1055,6 +1078,11 @@ class BotInstance {
     }
     /**
      * Anti-AFK Routine
+     * Performs realistic, diverse micro-actions to bypass Spigot/Paper/Essentials AFK detection:
+     * - Natural looking rotations with force=true
+     * - Micro-jumps (resets Spigot player-idle-timeout reliably)
+     * - Arm swings & sneaking toggles
+     * - Micro-nudges forward & back (resets block-change AFK detectors without falling or drifting)
      */
     startAntiAfk() {
         if (this.antiAfkInterval)
@@ -1065,20 +1093,63 @@ class BotInstance {
             if (!this.bot || this.status !== 'online' || this.isFollowing || this.bot.isSleeping)
                 return;
             try {
-                const randomYaw = this.bot.entity.yaw + (Math.random() * 0.4 - 0.2);
-                const randomPitch = (Math.random() * 0.3 - 0.15);
-                this.bot.look(randomYaw, randomPitch, false);
-                const action = Math.random();
-                if (action > 0.7) {
-                    this.bot.setControlState('sneak', true);
-                    setTimeout(() => this.bot?.setControlState('sneak', false), 800);
+                // 1. Natural Looking Rotation (with force=true to ensure look packet is sent)
+                const currentYaw = this.bot.entity?.yaw ?? 0;
+                const currentPitch = this.bot.entity?.pitch ?? 0;
+                const targetYaw = currentYaw + (Math.random() * 0.8 - 0.4);
+                const targetPitch = Math.max(-0.7, Math.min(0.7, currentPitch + (Math.random() * 0.4 - 0.2)));
+                this.bot.look(targetYaw, targetPitch, true);
+                // 2. Select diverse, realistic physical actions
+                const rand = Math.random();
+                if (rand < 0.35) {
+                    // Action A: Micro-jump when grounded (instantly resets Spigot/Paper idle timer)
+                    if (this.bot.entity?.onGround) {
+                        this.bot.setControlState('jump', true);
+                        setTimeout(() => {
+                            if (this.bot)
+                                this.bot.setControlState('jump', false);
+                        }, 250);
+                    }
                 }
-                else if (action > 0.5) {
+                else if (rand < 0.65) {
+                    // Action B: Arm swing + Sneak toggle
                     this.bot.swingArm('right');
+                    this.bot.setControlState('sneak', true);
+                    setTimeout(() => {
+                        if (this.bot)
+                            this.bot.setControlState('sneak', false);
+                    }, 600);
+                }
+                else if (rand < 0.85) {
+                    // Action C: Micro-nudge (step forward 120ms then step back 120ms to stay on exact spot)
+                    if (this.bot.entity?.onGround) {
+                        this.bot.setControlState('forward', true);
+                        setTimeout(() => {
+                            if (this.bot) {
+                                this.bot.setControlState('forward', false);
+                                this.bot.setControlState('back', true);
+                                setTimeout(() => {
+                                    if (this.bot)
+                                        this.bot.setControlState('back', false);
+                                }, 120);
+                            }
+                        }, 120);
+                    }
+                }
+                else {
+                    // Action D: Arm swing + Sneak combo
+                    this.bot.swingArm('right');
+                    this.bot.setControlState('sneak', true);
+                    setTimeout(() => {
+                        if (this.bot) {
+                            this.bot.swingArm('right');
+                            this.bot.setControlState('sneak', false);
+                        }
+                    }, 700);
                 }
             }
             catch (e) { }
-        }, 15000);
+        }, 9000);
     }
     setAntiAfk(enabled) {
         this.isAntiAfkActive = enabled;
@@ -1088,6 +1159,145 @@ class BotInstance {
         else if (this.antiAfkInterval) {
             clearInterval(this.antiAfkInterval);
             this.antiAfkInterval = null;
+        }
+    }
+    /**
+     * Scans inventory and offhand for any edible food item
+     */
+    findFoodInInventory() {
+        if (!this.bot)
+            return null;
+        const banned = new Set([
+            'pufferfish', 'spider_eye', 'poisonous_potato', 'rotten_flesh',
+            'chorus_fruit', 'suspicious_stew'
+        ]);
+        const foodsRegistry = this.bot.registry?.foodsByName;
+        const items = this.bot.inventory?.items() || [];
+        const offhand = this.bot.inventory?.slots?.[45];
+        if (offhand && !items.includes(offhand)) {
+            items.push(offhand);
+        }
+        const commonFoods = new Set([
+            'cooked_beef', 'cooked_porkchop', 'cooked_mutton', 'cooked_chicken',
+            'cooked_salmon', 'cooked_cod', 'steak', 'porkchop', 'mutton', 'beef',
+            'chicken', 'salmon', 'cod', 'bread', 'golden_carrot', 'golden_apple',
+            'apple', 'baked_potato', 'carrot', 'melon_slice', 'sweet_berries',
+            'glow_berries', 'cookie', 'pumpkin_pie', 'honey_bottle', 'mushroom_stew',
+            'rabbit_stew', 'beetroot_soup', 'cooked_rabbit', 'rabbit'
+        ]);
+        for (const item of items) {
+            if (item && item.name && !banned.has(item.name)) {
+                if ((foodsRegistry && foodsRegistry[item.name]) || commonFoods.has(item.name)) {
+                    return item;
+                }
+            }
+        }
+        return null;
+    }
+    /**
+     * Autonomous Auto-Eat Watchdog
+     * Checks food levels every 4 seconds. If food drops to 16 or lower (or health < 20),
+     * autonomously finds food in inventory and eats.
+     */
+    startAutoEatWatcher() {
+        if (this.autoEatWatcherInterval)
+            clearInterval(this.autoEatWatcherInterval);
+        if (!this.isAutoEatActive)
+            return;
+        this.autoEatWatcherInterval = setInterval(() => {
+            if (!this.bot || this.status !== 'online' || !this.isAutoEatActive || this.isEatingFallback)
+                return;
+            const needsFood = this.bot.food <= 16 || (this.bot.health < 20 && this.bot.food < 20);
+            if (!needsFood)
+                return;
+            const autoEat = this.bot.autoEat;
+            if (autoEat?.isEating)
+                return;
+            const foodItem = this.findFoodInInventory();
+            if (!foodItem)
+                return;
+            if (autoEat && typeof autoEat.eat === 'function') {
+                autoEat.eat().catch(() => {
+                    this.manualEatFood();
+                });
+            }
+            else {
+                this.manualEatFood();
+            }
+        }, 4000);
+    }
+    /**
+     * Direct Eating Fallback (used if mineflayer-auto-eat plugin encounters inventory desync)
+     */
+    async manualEatFood() {
+        if (!this.bot || this.status !== 'online' || this.isEatingFallback)
+            return false;
+        const food = this.findFoodInInventory();
+        if (!food)
+            return false;
+        this.isEatingFallback = true;
+        try {
+            console.log(`[Bot ${this.config.username}] Auto-eating ${food.name} (Food: ${this.bot.food}/20)...`);
+            this.emitChatMessage(`🍖 Auto-eating ${food.name} (Food: ${this.bot.food}/20)...`, undefined, true);
+            const prevItem = this.bot.heldItem;
+            await this.bot.equip(food, 'hand');
+            this.bot.activateItem();
+            // Minecraft eating takes 32 ticks (1.6s)
+            await new Promise((resolve) => setTimeout(resolve, 1650));
+            this.bot.deactivateItem();
+            if (prevItem && prevItem.name !== food.name) {
+                try {
+                    await this.bot.equip(prevItem, 'hand');
+                }
+                catch (e) { }
+            }
+            console.log(`[Bot ${this.config.username}] Finished eating ${food.name}. Food: ${this.bot.food}/20.`);
+            this.emitChatMessage(`✅ Finished eating ${food.name}. Hunger: ${this.bot.food}/20`, undefined, true);
+            this.broadcastState();
+            return true;
+        }
+        catch (err) {
+            console.warn(`[Bot ${this.config.username}] Eat error:`, err?.message);
+            return false;
+        }
+        finally {
+            this.isEatingFallback = false;
+        }
+    }
+    /**
+     * Trigger eating via in-game command or dashboard
+     */
+    async triggerEatFood() {
+        if (!this.bot || this.status !== 'online')
+            return;
+        const food = this.findFoodInInventory();
+        if (!food) {
+            this.bot.chat('No edible food found in my inventory!');
+            this.emitChatMessage('⚠️ No edible food found in inventory.', undefined, true);
+            return;
+        }
+        if (this.bot.food >= 20) {
+            this.bot.chat(`I am already completely full! (${this.bot.food}/20 food)`);
+            return;
+        }
+        const autoEat = this.bot.autoEat;
+        if (autoEat && typeof autoEat.eat === 'function') {
+            autoEat.eat()
+                .then(() => {
+                this.bot?.chat(`Ate ${food.name} from inventory.`);
+            })
+                .catch(() => {
+                this.manualEatFood().then((ok) => {
+                    if (ok)
+                        this.bot?.chat(`Ate ${food.name} from inventory.`);
+                });
+            });
+        }
+        else {
+            this.manualEatFood().then((ok) => {
+                if (ok)
+                    this.bot?.chat(`Ate ${food.name} from inventory.`);
+            });
         }
     }
     /**
@@ -1132,10 +1342,21 @@ class BotInstance {
     setAutoEat(enabled) {
         this.isAutoEatActive = enabled;
         if (this.bot?.autoEat) {
-            this.bot.autoEat.options.bannedFood = enabled
-                ? ['rotten_flesh', 'spider_eye', 'poisonous_potato', 'pufferfish']
-                : [];
+            if (enabled) {
+                this.bot.autoEat.enable();
+            }
+            else {
+                this.bot.autoEat.disable();
+            }
         }
+        if (enabled) {
+            this.startAutoEatWatcher();
+        }
+        else if (this.autoEatWatcherInterval) {
+            clearInterval(this.autoEatWatcherInterval);
+            this.autoEatWatcherInterval = null;
+        }
+        console.log(`[Bot ${this.config.username}] Auto-Eat is now ${enabled ? 'ENABLED' : 'DISABLED'}`);
     }
     /**
      * Disconnect Timer
@@ -1513,6 +1734,11 @@ class BotInstance {
             clearInterval(this.autoAttackInterval);
             this.autoAttackInterval = null;
         }
+        if (this.autoEatWatcherInterval) {
+            clearInterval(this.autoEatWatcherInterval);
+            this.autoEatWatcherInterval = null;
+        }
+        this.isEatingFallback = false;
         this.cancelDisconnectTimer();
         this.trackedDoors.clear();
         this.doorCooldowns.clear();
