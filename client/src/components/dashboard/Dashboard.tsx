@@ -471,12 +471,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const renderTabBadge = (slotId: SlotId) => {
     const s = slots[slotId];
     const status = s.botState.status;
+    const isNightSkip = Boolean(s.botState.retryInfo?.isNightSkip);
 
     if (status === 'online') {
       return (
         <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-500/80 shadow-sm">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           ONLINE
+        </span>
+      );
+    }
+    if (isNightSkip) {
+      return (
+        <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-purple-950 text-purple-300 border border-purple-500/80 shadow-sm">
+          <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+          🌙 NIGHT SKIP
         </span>
       );
     }
@@ -709,6 +718,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               autoAttack={currentSlot.autoAttack}
               aiChat={currentSlot.aiChat}
               isSleeping={currentSlot.botState.isSleeping}
+              isNightSkip={Boolean(currentSlot.botState.retryInfo?.isNightSkip)}
               activeTimerRemaining={currentSlot.timerRemaining}
               onToggleAntiAfk={handleToggleAntiAfk}
               onToggleAutoEat={handleToggleAutoEat}

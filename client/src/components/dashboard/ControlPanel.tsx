@@ -20,6 +20,7 @@ interface ControlPanelProps {
   autoAttack: boolean;
   aiChat?: boolean;
   isSleeping?: boolean;
+  isNightSkip?: boolean;
   activeTimerRemaining?: number | null; // seconds
   onToggleAntiAfk: (enabled: boolean) => void;
   onToggleAutoEat: (enabled: boolean) => void;
@@ -43,6 +44,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   autoAttack,
   aiChat = true,
   isSleeping = false,
+  isNightSkip = false,
   activeTimerRemaining,
   onToggleAntiAfk,
   onToggleAutoEat,
@@ -108,11 +110,16 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           {onNightSkip && (
             <button
               onClick={onNightSkip}
-              className="px-2.5 py-1 text-[11px] font-pixel bg-purple-950/80 hover:bg-purple-900 border border-purple-600/80 text-purple-200 rounded flex items-center gap-1.5 cursor-pointer shadow transition"
-              title="Leave for 60 seconds so players can sleep through the night, then auto-rejoin"
+              disabled={isNightSkip}
+              className={`px-2.5 py-1 text-[11px] font-pixel rounded flex items-center gap-1.5 shadow transition ${
+                isNightSkip
+                  ? 'bg-purple-950/40 border border-purple-500/40 text-purple-400/60 cursor-not-allowed'
+                  : 'bg-purple-950/80 hover:bg-purple-900 border border-purple-600/80 text-purple-200 cursor-pointer'
+              }`}
+              title={isNightSkip ? 'Night Skip in progress (auto-rejoining in 1 min)' : 'Leave for 60 seconds so players can sleep through the night, then auto-rejoin'}
             >
               <Moon className="w-3.5 h-3.5 text-purple-300" />
-              <span>Night Skip (1m)</span>
+              <span>{isNightSkip ? 'Night Skip Active...' : 'Night Skip (1m)'}</span>
             </button>
           )}
 

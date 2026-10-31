@@ -970,29 +970,24 @@ class BotInstance {
         const delayMs = durationSeconds * 1000;
         this.nextRetryAt = Date.now() + delayMs;
         this.status = 'connecting';
-        this.errorMessage = `Passing the night: Disconnected for ${durationSeconds}s to let players sleep. Rejoining in ${durationSeconds}s...`;
+        this.uptimeStart = 0;
+        this.errorMessage = `Night Skip: Disconnected for ${durationSeconds}s so players can sleep. Rejoining in ${durationSeconds}s...`;
+        this.emitChatMessage(`🌙 Night Skip activated! Leaving for ${durationSeconds}s so players can sleep. Auto-rejoining in 1 minute...`, undefined, true);
+        this.tempLeaveTimer = setTimeout(() => {
+            this.tempLeaveTimer = null;
+            this.nextRetryAt = 0;
+            if (this.isExplicitlyStopped)
+                return;
+            console.log(`[Bot ${this.config.username}] ${durationSeconds}s night-skip completed. Rejoining Minecraft server...`);
+            this.emitChatMessage(`🌅 Night skip completed! Rejoining server now...`, undefined, true);
+            this.retryNow();
+        }, delayMs);
         setTimeout(() => {
-            if (this.bot) {
-                try {
-                    this.bot.removeAllListeners();
-                    if (this.bot._client) {
-                        this.bot._client.removeAllListeners();
-                    }
-                    this.bot.quit();
-                    this.bot = null;
-                }
-                catch (e) { }
-            }
+            this.destroyBot();
             this.cleanup();
             this.broadcastState();
-            this.tempLeaveTimer = setTimeout(() => {
-                this.tempLeaveTimer = null;
-                if (this.isExplicitlyStopped)
-                    return;
-                console.log(`[Bot ${this.config.username}] 60s night-skip completed. Rejoining Minecraft server...`);
-                this.retryNow();
-            }, delayMs);
         }, 400);
+        this.broadcastState();
     }
     /**
      * Change Bot Username and Rejoin in X seconds (default 10s)
@@ -1400,10 +1395,11 @@ class BotInstance {
             ownerIgn: this.config.ownerIgn,
             isAiChatActive: this.isAiChatActive,
             isSleeping: isOnline ? Boolean(this.bot?.isSleeping) : false,
-            retryInfo: (this.status === 'connecting' && this.retryTimer && this.nextRetryAt > 0) ? {
-                attempt: this.retryCount,
-                maxAttempts: this.maxRetries,
+            retryInfo: (this.status === 'connecting' && (this.retryTimer || this.tempLeaveTimer) && this.nextRetryAt > 0) ? {
+                attempt: this.tempLeaveTimer ? 1 : this.retryCount,
+                maxAttempts: this.tempLeaveTimer ? 1 : this.maxRetries,
                 nextRetryAt: this.nextRetryAt,
+                isNightSkip: Boolean(this.tempLeaveTimer),
             } : null,
         };
     }

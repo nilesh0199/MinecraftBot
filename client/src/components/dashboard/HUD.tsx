@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Activity, Compass, MapPin, Wifi, Shield, Copy, Check, Edit3, X } from 'lucide-react';
+import { Activity, Compass, MapPin, Wifi, Shield, Copy, Check, Edit3, X, Moon, Zap } from 'lucide-react';
 import { sounds } from '../../utils/audio';
 
 export interface BotState {
@@ -23,6 +23,7 @@ export interface BotState {
     attempt: number;
     maxAttempts: number;
     nextRetryAt: number;
+    isNightSkip?: boolean;
   } | null;
 }
 
@@ -173,13 +174,15 @@ export const HUD: React.FC<HUDProps> = ({ botState, onRetryConnect, onChangeUser
                 className={`text-xs font-sans font-semibold px-2.5 py-0.5 rounded-full border uppercase tracking-wide flex items-center gap-1.5 ${
                   botState.status === 'online'
                     ? 'bg-emerald-950/90 text-emerald-400 border-emerald-600 shadow-emerald-950/50 shadow'
+                    : botState.retryInfo?.isNightSkip
+                    ? 'bg-purple-950/90 text-purple-300 border-purple-500 animate-pulse'
                     : botState.status === 'connecting'
                     ? 'bg-amber-950/90 text-amber-400 border-amber-600 animate-pulse'
                     : 'bg-red-950/90 text-red-400 border-red-600'
                 }`}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                {botState.status}
+                {botState.retryInfo?.isNightSkip ? `Night Skip (${countdown}s)` : botState.status}
               </span>
 
               {botState.isSleeping && (
@@ -219,40 +222,66 @@ export const HUD: React.FC<HUDProps> = ({ botState, onRetryConnect, onChangeUser
         </div>
       </div>
 
-      {/* Offline / Reconnecting Status Banner */}
+      {/* Offline / Reconnecting / Night Skip Status Banner */}
       {(botState.status === 'connecting' || botState.error) && (
         <div
           className={`p-3.5 rounded border mb-4 flex flex-wrap items-center justify-between gap-3 ${
-            botState.status === 'connecting'
+            botState.retryInfo?.isNightSkip
+              ? 'bg-purple-950/80 border-purple-500/80 text-purple-200 shadow-lg shadow-purple-950/60'
+              : botState.status === 'connecting'
               ? 'bg-amber-950/60 border-amber-600/70 text-amber-200'
               : 'bg-red-950/60 border-red-600/70 text-red-200'
           }`}
         >
-          <div className="flex items-center gap-2.5">
-            <span
-              className={`w-3 h-3 rounded-full inline-block ${
-                botState.status === 'connecting' ? 'bg-amber-400 animate-ping' : 'bg-red-500'
-              }`}
-            />
+          <div className="flex items-center gap-3">
+            {botState.retryInfo?.isNightSkip ? (
+              <div className="w-9 h-9 rounded-full bg-purple-900/80 border border-purple-400 flex items-center justify-center shrink-0 shadow-md">
+                <Moon className="w-5 h-5 text-purple-300 animate-pulse" />
+              </div>
+            ) : (
+              <span
+                className={`w-3 h-3 rounded-full inline-block ${
+                  botState.status === 'connecting' ? 'bg-amber-400 animate-ping' : 'bg-red-500'
+                }`}
+              />
+            )}
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-pixel text-xs tracking-wide uppercase">
-                  {botState.status === 'connecting' ? 'Reconnecting to Server' : 'Connection Alert'}
+                  {botState.retryInfo?.isNightSkip
+                    ? '🌙 Night Skip in Progress'
+                    : botState.status === 'connecting'
+                    ? 'Reconnecting to Server'
+                    : 'Connection Alert'}
                 </span>
-                {botState.retryInfo && (
+                {botState.retryInfo?.isNightSkip ? (
+                  <span className="font-mono text-[10px] bg-purple-900/80 px-2 py-0.5 rounded border border-purple-400/60 text-purple-200 font-bold uppercase tracking-wider">
+                    1-Min Sleep Window
+                  </span>
+                ) : botState.retryInfo && (
                   <span className="font-mono text-[10px] bg-black/50 px-2 py-0.5 rounded border border-amber-500/30 text-amber-300">
                     Attempt {botState.retryInfo.attempt}/{botState.retryInfo.maxAttempts}
                   </span>
                 )}
               </div>
-              <div className="font-sans text-xs text-slate-200 mt-0.5">
+              <div className="font-sans text-xs text-slate-200 mt-1">
                 {countdown > 0 ? (
                   <span className="flex items-center gap-1.5 flex-wrap">
-                    <span>Reconnecting in</span>
-                    <strong className="text-amber-300 font-bold font-mono px-1.5 py-0.2 bg-black/40 rounded border border-amber-500/30">
+                    <span>
+                      {botState.retryInfo?.isNightSkip
+                        ? 'Left server so players can sleep. Auto-rejoining in'
+                        : 'Reconnecting in'}
+                    </span>
+                    <strong
+                      className={`font-bold font-mono px-2 py-0.5 rounded border text-sm ${
+                        botState.retryInfo?.isNightSkip
+                          ? 'text-purple-100 bg-purple-900/90 border-purple-400 shadow-sm animate-pulse'
+                          : 'text-amber-300 bg-black/40 border-amber-500/30'
+                      }`}
+                    >
                       {countdown}s
                     </strong>
-                    {botState.error && !botState.error.includes('Reconnecting in') && (
+                    {botState.error && !botState.error.includes('Reconnecting in') && !botState.retryInfo?.isNightSkip && (
                       <span className="text-slate-400 text-[11px]">({botState.error})</span>
                     )}
                   </span>
@@ -270,10 +299,15 @@ export const HUD: React.FC<HUDProps> = ({ botState, onRetryConnect, onChangeUser
                   sounds.playClick();
                   onRetryConnect();
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-800 border border-emerald-400 font-pixel text-xs text-emerald-100 rounded shadow-md transition cursor-pointer"
-                title="Immediately reconnect without waiting for timer"
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 border font-pixel text-xs rounded shadow-md transition cursor-pointer ${
+                  botState.retryInfo?.isNightSkip
+                    ? 'bg-purple-800 hover:bg-purple-700 active:bg-purple-900 border-purple-400 text-purple-100'
+                    : 'bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-800 border-emerald-400 text-emerald-100'
+                }`}
+                title={botState.retryInfo?.isNightSkip ? 'Cancel wait and rejoin server immediately' : 'Immediately reconnect without waiting for timer'}
               >
-                <span>⚡</span> Retry Now
+                <Zap className="w-3.5 h-3.5" />
+                <span>{botState.retryInfo?.isNightSkip ? 'Rejoin Server Now' : 'Retry Now'}</span>
               </button>
             )}
           </div>
