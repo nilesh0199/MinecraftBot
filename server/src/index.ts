@@ -6,8 +6,8 @@ import cors from 'cors';
 import path from 'path';
 import dotenv from 'dotenv';
 import { BotManager } from './bot/BotManager';
-import { SessionAuth } from './security/auth';
 import { RateLimiter, SecurityValidator } from './security/validator';
+import { SlotId } from './storage/slotStorage';
 
 dotenv.config();
 
@@ -21,53 +21,39 @@ app.disable('x-powered-by');
 
 // 2. Comprehensive Security Headers Middleware
 app.use((req, res, next) => {
-  // Prevent MIME-sniffing
   res.setHeader('X-Content-Type-Options', 'nosniff');
-
-  // Prevent UI Redressing / Clickjacking
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-
-  // Modern standard: disable buggy legacy browser XSS filters
   res.setHeader('X-XSS-Protection', '0');
-
-  // Send full referrer on same-origin, only origin on cross-origin HTTPS
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-
-  // Restrict unused browser hardware APIs
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 
-  // Enable popup communication for Firebase Google OAuth without COOP restrictions
-  res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
-
-  // HSTS in production (enforce HTTPS for 1 year)
   if (process.env.NODE_ENV === 'production') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
 
-  // Content Security Policy (CSP) tailored for CraftBot, Google OAuth, and Firebase
   res.setHeader(
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' https://apis.google.com https://*.firebaseio.com https://*.googleapis.com",
+      "script-src 'self' 'unsafe-inline'",
       "connect-src 'self' wss: https: http://localhost:* ws://localhost:*",
       "img-src 'self' data: https: blob:",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
-      "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com",
+      "frame-src 'self'",
     ].join('; ')
   );
 
   next();
 });
 
-// 3. Intelligent & Configurable CORS Policy
+// 3. Intelligent CORS Policy
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim().toLowerCase())
   : [];
 
 const isOriginAllowed = (origin: string | undefined): boolean => {
-  if (!origin) return true; // Allow non-browser agents (curl, server-to-server)
+  if (!origin) return true;
   const lower = origin.toLowerCase();
 
   if (allowedOrigins.length > 0 && allowedOrigins.includes(lower)) {
@@ -84,7 +70,7 @@ const isOriginAllowed = (origin: string | undefined): boolean => {
     return true;
   }
 
-  return process.env.NODE_ENV !== 'production';
+  return true; // Zero-auth public access enabled
 };
 
 const corsOptions: cors.CorsOptions = {
@@ -100,9 +86,9 @@ const corsOptions: cors.CorsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '100kb' })); // Mitigate payload flooding
+app.use(express.json({ limit: '100kb' }));
 
-// Helper to reliably extract client IP behind reverse proxies
+// Helper to extract client IP
 const getClientIp = (req: express.Request): string => {
   const forwarded = req.headers['x-forwarded-for'];
   if (typeof forwarded === 'string') {
@@ -111,64 +97,43 @@ const getClientIp = (req: express.Request): string => {
   return req.socket.remoteAddress || 'unknown';
 };
 
-// 4. Global API Rate Limiter (Max 60 requests/min per IP)
+// Global API Rate Limiter
 app.use('/api', (req, res, next) => {
   const ip = getClientIp(req);
-  if (!rateLimiter.isAllowed(`api_general:${ip}`, 60, 60000)) {
+  if (!rateLimiter.isAllowed(`api_general:${ip}`, 120, 60000)) {
     return res.status(429).json({ error: 'Too many requests. Please slow down.' });
   }
   next();
 });
 
-// API: Session Token Generator for Authenticated Clients (Rate limited: Max 15 / min per IP)
-app.post('/api/auth/token', (req, res) => {
-  const ip = getClientIp(req);
-  if (!rateLimiter.isAllowed(`api_auth:${ip}`, 15, 60000)) {
-    return res.status(429).json({ error: 'Too many authentication attempts. Please wait a minute.' });
-  }
-
-  const { uid, ownerIgn } = req.body;
-  const uidVal = SecurityValidator.validateUid(uid);
-  if (!uidVal.valid || !uidVal.sanitized) {
-    return res.status(400).json({ error: uidVal.error || 'Valid UID is required.' });
-  }
-
-  let sanitizedOwner = '';
-  if (ownerIgn && typeof ownerIgn === 'string') {
-    const ownerVal = SecurityValidator.validateUsername(ownerIgn);
-    sanitizedOwner = ownerVal.valid && ownerVal.sanitized
-      ? ownerVal.sanitized
-      : ownerIgn.substring(0, 16).replace(/[^a-zA-Z0-9_]/g, '');
-  }
-
-  const token = SessionAuth.createSessionToken(uidVal.sanitized, sanitizedOwner);
-  res.json({ token, uid: uidVal.sanitized, ownerIgn: sanitizedOwner });
+// Setup Socket.io
+const io = new SocketServer(server, {
+  cors: {
+    origin: (origin, callback) => {
+      if (isOriginAllowed(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS blocked: Origin ${origin} not permitted.`));
+      }
+    },
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+  pingTimeout: 30000,
+  pingInterval: 15000,
 });
 
-// API health endpoint (Lightweight, non-disclosing)
+const botManager = new BotManager(io);
+
+// Keep-Alive Health Endpoint for UptimeRobot (also revives any active bots if offline!)
 app.get('/health', (req, res) => {
+  const check = botManager.checkAndReviveSlots();
   res.json({
     status: 'online',
     service: 'craftbot-daemon',
     uptime: Math.floor(process.uptime()),
     timestamp: Date.now(),
-  });
-});
-
-// API: Provide Firebase client credentials dynamically to frontend from server environment variables
-app.get('/api/firebase-config', (req, res) => {
-  const ip = getClientIp(req);
-  if (!rateLimiter.isAllowed(`api_cfg:${ip}`, 30, 60000)) {
-    return res.status(429).json({ error: 'Rate limit exceeded.' });
-  }
-
-  res.json({
-    apiKey: process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || '',
-    authDomain: process.env.FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-    projectId: process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || '',
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-    appId: process.env.FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID || '',
+    slots: check.slots,
   });
 });
 
@@ -211,214 +176,209 @@ app.get('/api/test-connect', (req, res) => {
   });
 });
 
-// 5. Serve static frontend with hidden files & dotfiles ignored
+// Serve static frontend
 const clientDistPath = path.resolve(__dirname, '../../client/dist');
 app.use(express.static(clientDistPath, {
   dotfiles: 'ignore',
   index: 'index.html',
 }));
 
-// 6. Setup Socket.io with Hardened CORS
-const io = new SocketServer(server, {
-  cors: {
-    origin: (origin, callback) => {
-      if (isOriginAllowed(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS blocked: Origin ${origin} not permitted.`));
-      }
-    },
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
-  pingTimeout: 30000,
-  pingInterval: 15000,
-});
-
-const botManager = new BotManager(io);
-
-// 7. Socket Authentication Middleware
-io.use((socket, next) => {
-  const token = (socket.handshake.auth?.token || socket.handshake.query?.token) as string;
-  const rawUid = socket.handshake.query?.uid as string;
-  const rawOwnerIgn = socket.handshake.query?.ownerIgn as string;
-
-  if (token) {
-    const session = SessionAuth.verifySessionToken(token);
-    if (session) {
-      socket.data.userId = session.uid;
-      socket.data.ownerIgn = session.ownerIgn;
-      return next();
-    }
-  }
-
-  // Gracefully accept authenticated client with validated UID
-  if (rawUid && typeof rawUid === 'string') {
-    const uidVal = SecurityValidator.validateUid(rawUid);
-    if (uidVal.valid && uidVal.sanitized) {
-      socket.data.userId = uidVal.sanitized;
-      socket.data.ownerIgn = typeof rawOwnerIgn === 'string' ? rawOwnerIgn.substring(0, 32).replace(/[^a-zA-Z0-9_]/g, '') : '';
-      return next();
-    }
-    return next(new Error('Invalid UID format.'));
-  }
-
-  return next(new Error('Authentication credentials required.'));
-});
-
+// Zero-Auth Socket.io Handler
 io.on('connection', (socket) => {
-  const userId = socket.data.userId as string;
-  const ownerIgn = socket.data.ownerIgn as string;
+  // Join both bot rooms so the client receives live updates from both bots
+  socket.join('bot_1');
+  socket.join('bot_2');
 
-  // Join private room isolated to this user
-  socket.join(userId);
-  console.log(`[Socket] Authenticated connection: User ${userId} (Owner IGN: ${ownerIgn || 'N/A'})`);
+  console.log(`[Socket] Client connected (${socket.id}). Joined bot_1 and bot_2 rooms.`);
 
-  // If user already has a bot running in background, sync state immediately
-  const existingBot = botManager.getBot(userId) || (ownerIgn ? botManager.findBotByOwner(ownerIgn) : undefined);
-  if (existingBot) {
-    if (existingBot.userId !== userId) {
-      botManager.reassignBotUser(existingBot, userId);
-    }
-    existingBot.broadcastState();
-    existingBot.broadcastInventory();
+  // Send initial slots state immediately
+  socket.emit('init-slots', botManager.getAllSlotsState());
+
+  // Also push active inventory if bot is already online
+  const b1 = botManager.getBot('bot_1');
+  if (b1) {
+    socket.emit('bot-state', b1.getState());
+    socket.emit('inventory-update', { slotId: 'bot_1', items: b1.getInventory() });
   }
+  const b2 = botManager.getBot('bot_2');
+  if (b2) {
+    socket.emit('bot-state', b2.getState());
+    socket.emit('inventory-update', { slotId: 'bot_2', items: b2.getInventory() });
+  }
+
+  // Helper to extract target slot
+  const getSlot = (data: any): SlotId => {
+    return (data && (data.slotId === 'bot_2' || data.slot === 'bot_2')) ? 'bot_2' : 'bot_1';
+  };
 
   // Event: Spawn / Start Bot with validation
-  socket.on('start-bot', (config) => {
-    const result = botManager.startBot(userId, {
-      ...config,
-      ownerIgn: ownerIgn || config.ownerIgn,
-    });
+  socket.on('start-bot', (data) => {
+    const slotId = getSlot(data);
+    const config = {
+      username: data.username,
+      serverIp: data.serverIp,
+      serverPort: data.serverPort,
+      authPassword: data.authPassword,
+      version: data.version,
+      ownerIgn: data.ownerIgn || 'Player',
+      autoEat: data.autoEat,
+      antiAfk: data.antiAfk,
+      autoAttack: data.autoAttack,
+      isAiChatActive: data.isAiChatActive,
+    };
 
+    const result = botManager.startBot(slotId, config);
     if (!result.success) {
-      socket.emit('bot-error', result.error);
+      socket.emit('bot-error', { slotId, error: result.error });
     }
   });
 
   // Event: Stop Bot
-  socket.on('stop-bot', () => {
-    botManager.stopBot(userId);
+  socket.on('stop-bot', (data) => {
+    const slotId = getSlot(data);
+    botManager.stopBot(slotId);
   });
 
   // Event: Retry connection manually
-  socket.on('retry-connect', () => {
-    const existing = botManager.getBot(userId);
+  socket.on('retry-connect', (data) => {
+    const slotId = getSlot(data);
+    const existing = botManager.getBot(slotId);
     if (existing) {
       existing.retryNow();
     }
   });
 
-  // Event: Send In-Game Chat / Command with Rate Limiting (max 3 per sec)
-  socket.on('send-chat', (text: string) => {
-    const chatRateKey = `chat:${userId}`;
+  // Event: Send In-Game Chat / Command
+  socket.on('send-chat', (data) => {
+    const slotId = typeof data === 'object' ? getSlot(data) : 'bot_1';
+    const text = typeof data === 'object' ? data.text : data;
+
+    const chatRateKey = `chat:${socket.id}:${slotId}`;
     if (!rateLimiter.isAllowed(chatRateKey, 3, 1000)) {
       socket.emit('chat-message', {
+        slotId,
         id: Math.random().toString(36).substring(2, 9),
         sender: 'System',
-        message: 'Chat rate limit reached. Slow down!',
+        text: 'Chat rate limit reached. Slow down!',
         timestamp: Date.now(),
         isSystem: true,
       });
       return;
     }
 
-    const bot = botManager.getBot(userId);
-    if (bot) {
+    const bot = botManager.getBot(slotId);
+    if (bot && typeof text === 'string') {
       bot.sendChat(text);
     }
   });
 
   // Event: Toggle Anti-AFK
-  socket.on('toggle-anti-afk', (enabled: boolean) => {
-    const bot = botManager.getBot(userId);
+  socket.on('toggle-anti-afk', (data) => {
+    const slotId = getSlot(data);
+    const enabled = typeof data?.enabled === 'boolean' ? data.enabled : Boolean(data);
+    const bot = botManager.getBot(slotId);
     if (bot) {
-      bot.setAntiAfk(Boolean(enabled));
+      bot.setAntiAfk(enabled);
     }
   });
 
   // Event: Toggle Auto-Eat
-  socket.on('toggle-auto-eat', (enabled: boolean) => {
-    const bot = botManager.getBot(userId);
+  socket.on('toggle-auto-eat', (data) => {
+    const slotId = getSlot(data);
+    const enabled = typeof data?.enabled === 'boolean' ? data.enabled : Boolean(data);
+    const bot = botManager.getBot(slotId);
     if (bot) {
-      bot.setAutoEat(Boolean(enabled));
+      bot.setAutoEat(enabled);
     }
   });
 
   // Event: Toggle Auto-Attack
-  socket.on('toggle-auto-attack', (enabled: boolean) => {
-    const bot = botManager.getBot(userId);
+  socket.on('toggle-auto-attack', (data) => {
+    const slotId = getSlot(data);
+    const enabled = typeof data?.enabled === 'boolean' ? data.enabled : Boolean(data);
+    const bot = botManager.getBot(slotId);
     if (bot) {
-      bot.setAutoAttack(Boolean(enabled));
+      bot.setAutoAttack(enabled);
     }
   });
 
   // Event: Toggle AI Chat
-  socket.on('toggle-ai-chat', (enabled: boolean) => {
-    const bot = botManager.getBot(userId);
+  socket.on('toggle-ai-chat', (data) => {
+    const slotId = getSlot(data);
+    const enabled = typeof data?.enabled === 'boolean' ? data.enabled : Boolean(data);
+    const bot = botManager.getBot(slotId);
     if (bot) {
-      bot.isAiChatActive = Boolean(enabled);
+      bot.isAiChatActive = enabled;
       bot.broadcastState();
     }
   });
 
   // Event: Bed Sleep Navigation
-  socket.on('bot-sleep', () => {
-    const bot = botManager.getBot(userId);
+  socket.on('bot-sleep', (data) => {
+    const slotId = getSlot(data);
+    const bot = botManager.getBot(slotId);
     if (bot) {
       bot.goToSleep();
     }
   });
 
   // Event: Wake up from Bed
-  socket.on('bot-wake', () => {
-    const bot = botManager.getBot(userId);
+  socket.on('bot-wake', (data) => {
+    const slotId = getSlot(data);
+    const bot = botManager.getBot(slotId);
     if (bot) {
       bot.wakeUp();
     }
   });
 
-  // Event: Night Skip (Disconnect for 60s to let players pass the night, then auto-rejoin)
-  socket.on('bot-night-skip', () => {
-    const bot = botManager.getBot(userId);
+  // Event: Night Skip
+  socket.on('bot-night-skip', (data) => {
+    const slotId = getSlot(data);
+    const bot = botManager.getBot(slotId);
     if (bot) {
       bot.temporarySleepLeave(60);
     }
   });
 
   // Event: Follow Player
-  socket.on('follow-player', (targetPlayer: string) => {
-    const bot = botManager.getBot(userId);
-    if (bot) {
-      bot.followPlayer(targetPlayer);
+  socket.on('follow-player', (data) => {
+    const slotId = getSlot(data);
+    const target = typeof data?.target === 'string' ? data.target : data;
+    const bot = botManager.getBot(slotId);
+    if (bot && typeof target === 'string') {
+      bot.followPlayer(target);
     }
   });
 
   // Event: Stop Following
-  socket.on('stop-follow', () => {
-    const bot = botManager.getBot(userId);
+  socket.on('stop-follow', (data) => {
+    const slotId = getSlot(data);
+    const bot = botManager.getBot(slotId);
     if (bot) {
       bot.stopFollow();
     }
   });
 
-  // Event: Change Bot Username & Rejoin in 10s from Web UI
-  socket.on('change-bot-username', (newUsername: string) => {
-    const bot = botManager.getBot(userId);
+  // Event: Change Bot Username
+  socket.on('change-bot-username', (data) => {
+    const slotId = getSlot(data);
+    const newUsername = typeof data?.newUsername === 'string' ? data.newUsername : data;
+    const bot = botManager.getBot(slotId);
     if (!bot) {
-      socket.emit('bot-error', 'No active bot found to rename.');
+      socket.emit('bot-error', { slotId, error: 'No active bot found to rename.' });
       return;
     }
 
     const result = bot.changeUsernameAndRejoin(newUsername, 10);
     if (!result.success) {
-      socket.emit('bot-error', result.error || 'Failed to rename bot.');
+      socket.emit('bot-error', { slotId, error: result.error || 'Failed to rename bot.' });
     }
   });
 
-  // Event: Toss Item with Slot Boundary Check
-  socket.on('toss-item', (data: { slot: number; count?: number }) => {
-    const bot = botManager.getBot(userId);
+  // Event: Toss Item
+  socket.on('toss-item', (data) => {
+    const slotId = getSlot(data);
+    const bot = botManager.getBot(slotId);
     if (bot && typeof data?.slot === 'number') {
       const slotValidation = SecurityValidator.validateInventorySlot(data.slot);
       if (slotValidation.valid && slotValidation.sanitized !== undefined) {
@@ -427,9 +387,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Event: Equip Item with Destination Validation
-  socket.on('equip-item', (data: { slot: number; destination: any }) => {
-    const bot = botManager.getBot(userId);
+  // Event: Equip Item
+  socket.on('equip-item', (data) => {
+    const slotId = getSlot(data);
+    const bot = botManager.getBot(slotId);
     if (bot && typeof data?.slot === 'number') {
       const slotValidation = SecurityValidator.validateInventorySlot(data.slot);
       if (slotValidation.valid && slotValidation.sanitized !== undefined) {
@@ -439,18 +400,21 @@ io.on('connection', (socket) => {
   });
 
   // Event: Toss All
-  socket.on('toss-all', () => {
-    const bot = botManager.getBot(userId);
+  socket.on('toss-all', (data) => {
+    const slotId = getSlot(data);
+    const bot = botManager.getBot(slotId);
     if (bot) {
       bot.tossAll();
     }
   });
 
   // Event: Eat Item
-  socket.on('eat-item', (slot: number) => {
-    const bot = botManager.getBot(userId);
-    if (bot && typeof slot === 'number') {
-      const slotValidation = SecurityValidator.validateInventorySlot(slot);
+  socket.on('eat-item', (data) => {
+    const slotId = getSlot(data);
+    const itemSlot = typeof data?.slot === 'number' ? data.slot : data;
+    const bot = botManager.getBot(slotId);
+    if (bot && typeof itemSlot === 'number') {
+      const slotValidation = SecurityValidator.validateInventorySlot(itemSlot);
       if (slotValidation.valid && slotValidation.sanitized !== undefined) {
         bot.eatItem(slotValidation.sanitized);
       }
@@ -458,10 +422,12 @@ io.on('connection', (socket) => {
   });
 
   // Event: Use Item
-  socket.on('use-item', (slot: number) => {
-    const bot = botManager.getBot(userId);
-    if (bot && typeof slot === 'number') {
-      const slotValidation = SecurityValidator.validateInventorySlot(slot);
+  socket.on('use-item', (data) => {
+    const slotId = getSlot(data);
+    const itemSlot = typeof data?.slot === 'number' ? data.slot : data;
+    const bot = botManager.getBot(slotId);
+    if (bot && typeof itemSlot === 'number') {
+      const slotValidation = SecurityValidator.validateInventorySlot(itemSlot);
       if (slotValidation.valid && slotValidation.sanitized !== undefined) {
         bot.useItem(slotValidation.sanitized);
       }
@@ -469,8 +435,9 @@ io.on('connection', (socket) => {
   });
 
   // Event: Move Item
-  socket.on('move-item', (data: { sourceSlot: number; destSlot: number }) => {
-    const bot = botManager.getBot(userId);
+  socket.on('move-item', (data) => {
+    const slotId = getSlot(data);
+    const bot = botManager.getBot(slotId);
     if (bot && typeof data?.sourceSlot === 'number' && typeof data?.destSlot === 'number') {
       const srcValidation = SecurityValidator.validateInventorySlot(data.sourceSlot);
       const dstValidation = SecurityValidator.validateInventorySlot(data.destSlot);
@@ -481,10 +448,12 @@ io.on('connection', (socket) => {
   });
 
   // Event: Share Item
-  socket.on('share-item', (slot: number) => {
-    const bot = botManager.getBot(userId);
-    if (bot && typeof slot === 'number') {
-      const slotValidation = SecurityValidator.validateInventorySlot(slot);
+  socket.on('share-item', (data) => {
+    const slotId = getSlot(data);
+    const itemSlot = typeof data?.slot === 'number' ? data.slot : data;
+    const bot = botManager.getBot(slotId);
+    if (bot && typeof itemSlot === 'number') {
+      const slotValidation = SecurityValidator.validateInventorySlot(itemSlot);
       if (slotValidation.valid && slotValidation.sanitized !== undefined) {
         bot.shareItem(slotValidation.sanitized);
       }
@@ -492,37 +461,41 @@ io.on('connection', (socket) => {
   });
 
   // Event: Set Auto-Disconnect Timer
-  socket.on('set-timer', (minutes: number) => {
-    const bot = botManager.getBot(userId);
+  socket.on('set-timer', (data) => {
+    const slotId = getSlot(data);
+    const minutes = typeof data?.minutes === 'number' ? data.minutes : data;
+    const bot = botManager.getBot(slotId);
     if (!bot) return;
 
     const timerValidation = SecurityValidator.validateTimerMinutes(minutes);
     if (timerValidation.valid && timerValidation.sanitized !== undefined) {
       bot.setDisconnectTimer(timerValidation.sanitized);
     } else {
-      socket.emit('bot-error', timerValidation.error || 'Invalid timer duration.');
+      socket.emit('bot-error', { slotId, error: timerValidation.error || 'Invalid timer duration.' });
     }
   });
 
   // Event: Cancel Auto-Disconnect Timer
-  socket.on('cancel-timer', () => {
-    const bot = botManager.getBot(userId);
+  socket.on('cancel-timer', (data) => {
+    const slotId = getSlot(data);
+    const bot = botManager.getBot(slotId);
     if (bot) {
       bot.cancelDisconnectTimer();
     }
   });
 
   socket.on('disconnect', () => {
-    console.log(`[Socket] User ${userId} disconnected. Bot remains active in background.`);
+    console.log(`[Socket] Client disconnected (${socket.id}). Bots remain active in background.`);
   });
 });
 
-// Fallback to client index.html for SPA routing
+// Fallback to client index.html for SPA routing (also wakes up active bots on ping to root!)
 app.get('*', (req, res) => {
+  botManager.checkAndReviveSlots();
   res.sendFile(path.join(clientDistPath, 'index.html'));
 });
 
-// Centralized Express Error Handler (Hides debug traces and internals)
+// Centralized Express Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('[CraftBot Express Error]:', err?.message || err);
   const status = typeof err?.status === 'number' ? err.status : 500;
@@ -545,5 +518,6 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(` CraftBot 24/7 Cloud Manager Running!`);
   console.log(` Server & WebSocket Gateway: http://0.0.0.0:${PORT}`);
   console.log(` Mode: ${process.env.NODE_ENV || 'development'}`);
+  console.log(` Dual-Bot Slot System: Active & Online`);
   console.log(`===============================================`);
 });

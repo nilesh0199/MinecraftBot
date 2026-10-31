@@ -5,50 +5,103 @@ import { LiveChat, type ChatMessage } from './LiveChat';
 import { InventoryView, type InventoryItem } from './InventoryView';
 import { ControlPanel } from './ControlPanel';
 import { BotLauncher, type BotLaunchConfig } from './BotLauncher';
-import { type UserProfile, logout, recordBotUsage } from '../../firebase';
 import { MaceSmashAnimation } from '../animations/MaceSmashAnimation';
 import { sounds } from '../../utils/audio';
-import { LogOut, Settings, Shield, Zap, Volume2, VolumeX } from 'lucide-react';
+import { recordBotUsage, type UserProfile } from '../../utils/storage';
+import { Settings, Shield, Zap, Volume2, VolumeX, Bot as BotIcon, RefreshCw } from 'lucide-react';
+
+export type SlotId = 'bot_1' | 'bot_2';
+
+interface SlotData {
+  botState: BotState;
+  chatMessages: ChatMessage[];
+  inventoryItems: InventoryItem[];
+  antiAfk: boolean;
+  autoEat: boolean;
+  autoAttack: boolean;
+  aiChat: boolean;
+  timerRemaining: number | null;
+  serverAlert: string | null;
+  isLaunching: boolean;
+}
 
 interface DashboardProps {
   userProfile: UserProfile;
-  sessionToken?: string | null;
-  onEditProfile: () => void;
+  onUpdateOwnerIgn?: (newIgn: string) => void;
+  onTriggerMace?: () => void;
 }
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || window.location.origin;
 
-export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken, onEditProfile }) => {
+export const Dashboard: React.FC<DashboardProps> = ({
+  userProfile,
+  onUpdateOwnerIgn,
+  onTriggerMace,
+}) => {
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [isLaunching, setIsLaunching] = useState(false);
+  const [activeSlot, setActiveSlot] = useState<SlotId>('bot_1');
   const [showMaceSmash, setShowMaceSmash] = useState(false);
   const [isMuted, setIsMuted] = useState(sounds.isMuted());
+  const [isEditingOwner, setIsEditingOwner] = useState(false);
+  const [ownerInput, setOwnerInput] = useState(userProfile.ownerIgn || 'Player');
 
-  // Bot State
-  const [botState, setBotState] = useState<BotState>({
-    status: 'offline',
-    username: userProfile.recentBotNames?.[0] || 'MyBot',
-    serverIp: userProfile.recentServerIp || '',
-    serverPort: 25565,
-    health: 20,
-    food: 20,
-    xpLevel: 0,
-    xpProgress: 0,
-    dimension: 'minecraft:overworld',
-    position: { x: 0, y: 64, z: 0 },
-    ping: 0,
-    uptimeSeconds: 0,
-    ownerIgn: userProfile.ownerIgn,
+  // Multi-Bot Slots State
+  const [slots, setSlots] = useState<Record<SlotId, SlotData>>({
+    bot_1: {
+      botState: {
+        status: 'offline',
+        username: userProfile.recentBotNames?.[0] || 'Bot999',
+        serverIp: userProfile.recentServerIp || '',
+        serverPort: 25565,
+        health: 20,
+        food: 20,
+        xpLevel: 0,
+        xpProgress: 0,
+        dimension: 'minecraft:overworld',
+        position: { x: 0, y: 64, z: 0 },
+        ping: 0,
+        uptimeSeconds: 0,
+        ownerIgn: userProfile.ownerIgn || 'Player',
+      },
+      chatMessages: [],
+      inventoryItems: [],
+      antiAfk: true,
+      autoEat: true,
+      autoAttack: false,
+      aiChat: true,
+      timerRemaining: null,
+      serverAlert: null,
+      isLaunching: false,
+    },
+    bot_2: {
+      botState: {
+        status: 'offline',
+        username: userProfile.recentBotNames?.[1] || 'AFKBOT',
+        serverIp: userProfile.recentServerIp || '',
+        serverPort: 25565,
+        health: 20,
+        food: 20,
+        xpLevel: 0,
+        xpProgress: 0,
+        dimension: 'minecraft:overworld',
+        position: { x: 0, y: 64, z: 0 },
+        ping: 0,
+        uptimeSeconds: 0,
+        ownerIgn: userProfile.ownerIgn || 'Player',
+      },
+      chatMessages: [],
+      inventoryItems: [],
+      antiAfk: true,
+      autoEat: true,
+      autoAttack: false,
+      aiChat: true,
+      timerRemaining: null,
+      serverAlert: null,
+      isLaunching: false,
+    },
   });
 
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
-  const [antiAfk, setAntiAfk] = useState(true);
-  const [autoEat, setAutoEat] = useState(true);
-  const [autoAttack, setAutoAttack] = useState(false);
-  const [aiChat, setAiChat] = useState(true);
-  const [timerRemaining, setTimerRemaining] = useState<number | null>(null);
-  const [serverAlert, setServerAlert] = useState<string | null>(null);
+  const currentSlot = slots[activeSlot];
 
   // Sound toggle handler
   const toggleSound = () => {
@@ -76,66 +129,153 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Initialize Socket.io connection with secure authentication
+  // Initialize Socket.io connection (Zero-Auth public access)
   useEffect(() => {
     const s = io(BACKEND_URL, {
-      auth: {
-        token: sessionToken || undefined,
-      },
-      query: {
-        uid: userProfile.uid,
-        ownerIgn: userProfile.ownerIgn,
-      },
       transports: ['websocket', 'polling'],
     });
 
     s.on('connect', () => {
-      console.log('Connected to Authenticated Bot Gateway Socket');
+      console.log('Connected to CraftBot Public Gateway Socket:', s.id);
     });
 
-    s.on('bot-state', (state: Partial<BotState>) => {
-      setBotState((prev) => ({ ...prev, ...state }));
-      if (typeof state.isAiChatActive === 'boolean') {
-        setAiChat(state.isAiChatActive);
-      }
-      if (state.status === 'online') {
-        setIsLaunching(false);
-      }
+    // Initial sync of both slots from backend
+    s.on('init-slots', (allSlots: Record<SlotId, any>) => {
+      if (!allSlots) return;
+      setSlots((prev) => {
+        const next = { ...prev };
+        for (const id of ['bot_1', 'bot_2'] as SlotId[]) {
+          if (allSlots[id]) {
+            const raw = allSlots[id];
+            next[id] = {
+              ...next[id],
+              botState: {
+                ...next[id].botState,
+                ...raw,
+              },
+            };
+          }
+        }
+        return next;
+      });
     });
 
-    s.on('chat-message', (msg: ChatMessage) => {
-      setChatMessages((prev) => {
-        // Prevent duplicate messages with identical text received in the same second
-        if (prev.length > 0) {
-          const last = prev[prev.length - 1];
+    // Real-time state update for a specific slot
+    s.on('bot-state', (state: Partial<BotState> & { slotId?: SlotId }) => {
+      const targetSlot = state.slotId || 'bot_1';
+      setSlots((prev) => {
+        const prevSlot = prev[targetSlot];
+        const wasOnline = prevSlot.botState.status === 'online';
+        const isNowOnline = state.status === 'online';
+
+        // Trigger celebratory 1.21 Mace Smash entrance when bot connects!
+        if (!wasOnline && isNowOnline) {
+          setShowMaceSmash(true);
+        }
+
+        return {
+          ...prev,
+          [targetSlot]: {
+            ...prevSlot,
+            isLaunching: state.status === 'online' ? false : prevSlot.isLaunching,
+            botState: {
+              ...prevSlot.botState,
+              ...state,
+            },
+            aiChat: typeof state.isAiChatActive === 'boolean' ? state.isAiChatActive : prevSlot.aiChat,
+          },
+        };
+      });
+    });
+
+    // In-Game chat messages
+    s.on('chat-message', (msg: ChatMessage & { slotId?: SlotId }) => {
+      const targetSlot = msg.slotId || 'bot_1';
+      setSlots((prev) => {
+        const prevSlot = prev[targetSlot];
+        const prevMsgs = prevSlot.chatMessages;
+        if (prevMsgs.length > 0) {
+          const last = prevMsgs[prevMsgs.length - 1];
           if (last.text === msg.text && Math.abs(msg.timestamp - last.timestamp) < 1000) {
             return prev;
           }
         }
-        return [...prev.slice(-150), msg];
+        return {
+          ...prev,
+          [targetSlot]: {
+            ...prevSlot,
+            chatMessages: [...prevMsgs.slice(-150), msg],
+          },
+        };
       });
     });
 
-    s.on('inventory-update', (items: InventoryItem[]) => {
-      setInventoryItems(items);
+    // Inventory updates
+    s.on('inventory-update', (data: { slotId?: SlotId; items?: InventoryItem[] } | InventoryItem[]) => {
+      const targetSlot = (Array.isArray(data) ? 'bot_1' : data.slotId) || 'bot_1';
+      const items = Array.isArray(data) ? data : (data.items || []);
+      setSlots((prev) => ({
+        ...prev,
+        [targetSlot]: {
+          ...prev[targetSlot],
+          inventoryItems: items,
+        },
+      }));
     });
 
-    s.on('timer-update', (remainingSeconds: number | null) => {
-      setTimerRemaining(remainingSeconds);
+    // Auto-Disconnect timer update
+    s.on('timer-update', (data: { slotId?: SlotId; remainingSeconds: number | null } | number | null) => {
+      const targetSlot = (typeof data === 'object' && data !== null && 'slotId' in data) ? (data.slotId || 'bot_1') : 'bot_1';
+      const seconds = (typeof data === 'object' && data !== null && 'remainingSeconds' in data) ? data.remainingSeconds : (data as number | null);
+      setSlots((prev) => ({
+        ...prev,
+        [targetSlot]: {
+          ...prev[targetSlot],
+          timerRemaining: seconds,
+        },
+      }));
     });
 
-    s.on('bot-error', (errorMsg: string) => {
-      setIsLaunching(false);
-      setServerAlert(errorMsg);
+    // Bot error alerts
+    s.on('bot-error', (data: { slotId?: SlotId; error?: string } | string) => {
+      const targetSlot = (typeof data === 'object' && data.slotId) ? data.slotId : 'bot_1';
+      const errorMsg = typeof data === 'object' ? (data.error || 'Bot error') : data;
+      setSlots((prev) => ({
+        ...prev,
+        [targetSlot]: {
+          ...prev[targetSlot],
+          isLaunching: false,
+          serverAlert: errorMsg,
+        },
+      }));
     });
 
-    s.on('server-offline', (data: { serverIp: string; serverPort: number; attempts: number }) => {
-      setIsLaunching(false);
-      setServerAlert(`Minecraft server at ${data.serverIp}:${data.serverPort} is offline (failed after ${data.attempts} attempts). Click Spawn when your server is back online.`);
+    // Server offline notifications
+    s.on('server-offline', (data: { slotId?: SlotId; serverIp: string; serverPort: number; attempts: number }) => {
+      const targetSlot = data.slotId || 'bot_1';
+      setSlots((prev) => ({
+        ...prev,
+        [targetSlot]: {
+          ...prev[targetSlot],
+          isLaunching: false,
+          serverAlert: `Minecraft server at ${data.serverIp}:${data.serverPort} is offline (failed after ${data.attempts} attempts). Click Spawn when server is online.`,
+        },
+      }));
     });
 
-    s.on('owner-updated', (data: { newOwner: string }) => {
-      setBotState((prev) => ({ ...prev, ownerIgn: data.newOwner }));
+    // Owner IGN update
+    s.on('owner-updated', (data: { slotId?: SlotId; newOwner: string }) => {
+      const targetSlot = data.slotId || 'bot_1';
+      setSlots((prev) => ({
+        ...prev,
+        [targetSlot]: {
+          ...prev[targetSlot],
+          botState: {
+            ...prev[targetSlot].botState,
+            ownerIgn: data.newOwner,
+          },
+        },
+      }));
     });
 
     setSocket(s);
@@ -143,201 +283,291 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
     return () => {
       s.disconnect();
     };
-  }, [userProfile, sessionToken]);
-
-  // Purge any legacy auto-spawn cache on mount so user always controls spawning cleanly from UI
-  useEffect(() => {
-    try {
-      localStorage.removeItem('craftbot_auto_spawn');
-    } catch (e) {}
   }, []);
 
-  // Launch Bot Handler
+  // Launch Bot Handler for current slot
   const handleLaunchBot = async (config: BotLaunchConfig) => {
     if (!socket) return;
-    setIsLaunching(true);
-    setServerAlert(null);
     sounds.playClick();
 
-    const resolvedConfig = { ...config };
+    setSlots((prev) => ({
+      ...prev,
+      [activeSlot]: {
+        ...prev[activeSlot],
+        isLaunching: true,
+        serverAlert: null,
+        antiAfk: config.antiAfk,
+        autoEat: config.autoEat,
+        autoAttack: config.autoAttack,
+      },
+    }));
 
-    // Save recent bot username and server IP to Firebase (non-blocking in background)
-    recordBotUsage(userProfile.uid, resolvedConfig.username, `${resolvedConfig.serverIp}:${resolvedConfig.serverPort}`).catch(() => {});
-
-    setAntiAfk(resolvedConfig.antiAfk);
-    setAutoEat(resolvedConfig.autoEat);
-    setAutoAttack(resolvedConfig.autoAttack);
+    recordBotUsage(config.username, `${config.serverIp}:${config.serverPort}`);
 
     socket.emit('start-bot', {
-      ...resolvedConfig,
-      ownerIgn: userProfile.ownerIgn,
+      slotId: activeSlot,
+      ...config,
+      ownerIgn: userProfile.ownerIgn || 'Player',
     });
   };
 
-  // Actions
+  // Actions for current active bot
   const handleSendMessage = (text: string) => {
-    socket?.emit('send-chat', text);
+    socket?.emit('send-chat', { slotId: activeSlot, text });
   };
 
   const handleTossItem = (slot: number, count?: number) => {
-    socket?.emit('toss-item', { slot, count });
+    socket?.emit('toss-item', { slotId: activeSlot, slot, count });
   };
 
   const handleEquipItem = (slot: number, destination: string) => {
-    socket?.emit('equip-item', { slot, destination });
+    socket?.emit('equip-item', { slotId: activeSlot, slot, destination });
   };
 
   const handleTossAll = () => {
-    if (confirm('Are you sure you want the bot to toss out all items?')) {
-      socket?.emit('toss-all');
+    if (confirm(`Are you sure you want ${currentSlot.botState.username} to toss out all items?`)) {
+      socket?.emit('toss-all', { slotId: activeSlot });
     }
   };
 
   const handleEatItem = (slot: number) => {
     sounds.playClick();
-    socket?.emit('eat-item', slot);
+    socket?.emit('eat-item', { slotId: activeSlot, slot });
   };
 
   const handleUseItem = (slot: number) => {
     sounds.playClick();
-    socket?.emit('use-item', slot);
+    socket?.emit('use-item', { slotId: activeSlot, slot });
   };
 
   const handleMoveItem = (sourceSlot: number, destSlot: number) => {
     sounds.playClick();
-    socket?.emit('move-item', { sourceSlot, destSlot });
+    socket?.emit('move-item', { slotId: activeSlot, sourceSlot, destSlot });
   };
 
   const handleShareItem = (slot: number) => {
     sounds.playClick();
-    socket?.emit('share-item', slot);
+    socket?.emit('share-item', { slotId: activeSlot, slot });
   };
 
   const handleFollowPlayer = (target: string) => {
     sounds.playClick();
-    socket?.emit('follow-player', target);
+    socket?.emit('follow-player', { slotId: activeSlot, target });
   };
 
   const handleStopFollow = () => {
     sounds.playClick();
-    socket?.emit('stop-follow');
+    socket?.emit('stop-follow', { slotId: activeSlot });
   };
 
   const handleToggleAntiAfk = (enabled: boolean) => {
     sounds.playClick();
-    setAntiAfk(enabled);
-    socket?.emit('toggle-anti-afk', enabled);
+    setSlots((prev) => ({
+      ...prev,
+      [activeSlot]: { ...prev[activeSlot], antiAfk: enabled },
+    }));
+    socket?.emit('toggle-anti-afk', { slotId: activeSlot, enabled });
   };
 
   const handleToggleAutoEat = (enabled: boolean) => {
     sounds.playClick();
-    setAutoEat(enabled);
-    socket?.emit('toggle-auto-eat', enabled);
+    setSlots((prev) => ({
+      ...prev,
+      [activeSlot]: { ...prev[activeSlot], autoEat: enabled },
+    }));
+    socket?.emit('toggle-auto-eat', { slotId: activeSlot, enabled });
   };
 
   const handleToggleAutoAttack = (enabled: boolean) => {
     sounds.playClick();
-    setAutoAttack(enabled);
-    socket?.emit('toggle-auto-attack', enabled);
+    setSlots((prev) => ({
+      ...prev,
+      [activeSlot]: { ...prev[activeSlot], autoAttack: enabled },
+    }));
+    socket?.emit('toggle-auto-attack', { slotId: activeSlot, enabled });
   };
 
   const handleToggleAiChat = (enabled: boolean) => {
     sounds.playClick();
-    setAiChat(enabled);
-    socket?.emit('toggle-ai-chat', enabled);
+    setSlots((prev) => ({
+      ...prev,
+      [activeSlot]: { ...prev[activeSlot], aiChat: enabled },
+    }));
+    socket?.emit('toggle-ai-chat', { slotId: activeSlot, enabled });
   };
 
   const handleSleepInBed = () => {
     sounds.playClick();
-    socket?.emit('bot-sleep');
+    socket?.emit('bot-sleep', { slotId: activeSlot });
   };
 
   const handleWakeUp = () => {
     sounds.playClick();
-    socket?.emit('bot-wake');
+    socket?.emit('bot-wake', { slotId: activeSlot });
   };
 
   const handleNightSkip = () => {
     sounds.playClick();
-    socket?.emit('bot-night-skip');
+    socket?.emit('bot-night-skip', { slotId: activeSlot });
   };
 
   const handleChangeUsername = (newUsername: string) => {
     sounds.playClick();
-    socket?.emit('change-bot-username', newUsername);
-    if (userProfile?.uid && botState.serverIp) {
-      recordBotUsage(userProfile.uid, newUsername, `${botState.serverIp}:${botState.serverPort}`).catch(() => {});
-    }
+    socket?.emit('change-bot-username', { slotId: activeSlot, newUsername });
   };
 
   const handleSetTimer = (minutes: number) => {
     sounds.playClick();
-    socket?.emit('set-timer', minutes);
+    socket?.emit('set-timer', { slotId: activeSlot, minutes });
   };
 
   const handleCancelTimer = () => {
     sounds.playClick();
-    socket?.emit('cancel-timer');
+    socket?.emit('cancel-timer', { slotId: activeSlot });
   };
 
   const handleDisconnectBot = () => {
     sounds.playClick();
-    if (confirm('Disconnect bot from the Minecraft server and return to launcher?')) {
-      socket?.emit('stop-bot');
-      setBotState((prev) => ({
+    if (confirm(`Disconnect ${currentSlot.botState.username} from the Minecraft server?`)) {
+      socket?.emit('stop-bot', { slotId: activeSlot });
+      setSlots((prev) => ({
         ...prev,
-        status: 'offline',
+        [activeSlot]: {
+          ...prev[activeSlot],
+          botState: {
+            ...prev[activeSlot].botState,
+            status: 'offline',
+          },
+          chatMessages: [],
+          inventoryItems: [],
+        },
       }));
-      setChatMessages([]);
-      setInventoryItems([]);
-    }
-  };
-
-  const handleDisconnectAndSwitch = () => {
-    sounds.playClick();
-    if (confirm(`Disconnect ${botState.username} from ${botState.serverIp} and switch bot/server?`)) {
-      socket?.emit('stop-bot');
-      setBotState((prev) => ({
-        ...prev,
-        status: 'offline',
-      }));
-      setChatMessages([]);
-      setInventoryItems([]);
     }
   };
 
   const handleRetryConnect = () => {
     sounds.playClick();
-    setServerAlert(null);
-    socket?.emit('retry-connect');
+    setSlots((prev) => ({
+      ...prev,
+      [activeSlot]: {
+        ...prev[activeSlot],
+        serverAlert: null,
+      },
+    }));
+    socket?.emit('retry-connect', { slotId: activeSlot });
+  };
+
+  const handleSaveOwnerIgn = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = ownerInput.trim();
+    if (clean) {
+      onUpdateOwnerIgn?.(clean);
+      setIsEditingOwner(false);
+      sounds.playClick();
+    }
+  };
+
+  // Helper for Status Badge in Tab
+  const renderTabBadge = (slotId: SlotId) => {
+    const s = slots[slotId];
+    const status = s.botState.status;
+
+    if (status === 'online') {
+      return (
+        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-600/60 shadow-sm">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          ONLINE
+        </span>
+      );
+    }
+    if (status === 'connecting') {
+      return (
+        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-950/80 text-amber-300 border border-amber-600/60">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+          CONNECTING
+        </span>
+      );
+    }
+    return (
+      <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono text-slate-400 bg-slate-900 border border-slate-700/60">
+        <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+        OFFLINE
+      </span>
+    );
   };
 
   return (
     <div className="min-h-screen bg-[#0e0f13] text-slate-100 flex flex-col font-sans selection:bg-mc-green selection:text-black">
-      {/* 1.21 Mace Smash Modal if triggered */}
+      {/* 1.21 Mace Smash Animation */}
       {showMaceSmash && (
         <MaceSmashAnimation onComplete={() => setShowMaceSmash(false)} />
       )}
 
-      {/* Top Bar */}
-      <header className="border-b border-mc-border bg-[#14151b] px-4 sm:px-6 py-3">
+      {/* Top Header with Dual-Bot Tabs */}
+      <header className="border-b border-mc-border bg-[#14151b] px-3 sm:px-6 py-2.5 sticky top-0 z-30 shadow-md">
         <div className="w-full max-w-[1920px] mx-auto flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-[#252830] border border-mc-border flex items-center justify-center rounded">
-              <span className="text-base">🟩</span>
+          
+          {/* Logo & Dual Bot Tabs */}
+          <div className="flex items-center gap-3 sm:gap-6 flex-wrap">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 bg-[#252830] border border-mc-border flex items-center justify-center rounded">
+                <span className="text-base">🟩</span>
+              </div>
+              <div>
+                <h1 className="font-pixel text-xs text-slate-100 flex items-center gap-1.5">
+                  CraftBot
+                  <span className="text-[10px] font-mono text-mc-green bg-mc-green/10 px-1.5 py-0.2 rounded border border-mc-green/30">
+                    24/7 Dual
+                  </span>
+                </h1>
+              </div>
             </div>
-            <div>
-              <h2 className="font-pixel text-xs text-slate-100 flex items-center gap-2">
-                CraftBot Manager
-                <span className="text-[10px] font-mono text-mc-green bg-mc-green/10 px-1.5 py-0.2 rounded border border-mc-green/30">
-                  Cloud 24/7
+
+            {/* TWO SIMULTANEOUS BOT TABS */}
+            <div className="flex items-center bg-[#0a0b0e] p-1 rounded-lg border border-mc-border gap-1 shadow-inner">
+              {/* Tab: Bot 1 */}
+              <button
+                onClick={() => {
+                  sounds.playClick();
+                  setActiveSlot('bot_1');
+                }}
+                className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md transition-all cursor-pointer font-sans text-xs font-semibold ${
+                  activeSlot === 'bot_1'
+                    ? 'bg-[#1e2029] text-white border border-cyan-500/50 shadow-sm ring-1 ring-cyan-500/20'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-[#15161d] border border-transparent'
+                }`}
+              >
+                <BotIcon className={`w-3.5 h-3.5 ${activeSlot === 'bot_1' ? 'text-cyan-400' : 'text-slate-500'}`} />
+                <span className="font-medium tracking-wide">
+                  Bot 1: <strong className="text-white">{slots.bot_1.botState.username || 'Bot 1'}</strong>
                 </span>
-              </h2>
+                {renderTabBadge('bot_1')}
+              </button>
+
+              {/* Tab: Bot 2 */}
+              <button
+                onClick={() => {
+                  sounds.playClick();
+                  setActiveSlot('bot_2');
+                }}
+                className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md transition-all cursor-pointer font-sans text-xs font-semibold ${
+                  activeSlot === 'bot_2'
+                    ? 'bg-[#1e2029] text-white border border-cyan-500/50 shadow-sm ring-1 ring-cyan-500/20'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-[#15161d] border border-transparent'
+                }`}
+              >
+                <BotIcon className={`w-3.5 h-3.5 ${activeSlot === 'bot_2' ? 'text-cyan-400' : 'text-slate-500'}`} />
+                <span className="font-medium tracking-wide">
+                  Bot 2: <strong className="text-white">{slots.bot_2.botState.username || 'Bot 2'}</strong>
+                </span>
+                {renderTabBadge('bot_2')}
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
-            {/* Audio FX Mute / Unmute Toggle */}
+          {/* Right Header Controls: Audio, Mace Trigger, Authorized Controller */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Audio Toggle */}
             <button
               onClick={toggleSound}
               className={`p-1.5 rounded border transition-colors cursor-pointer ${
@@ -355,6 +585,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
               onClick={() => {
                 sounds.playClick();
                 setShowMaceSmash(true);
+                onTriggerMace?.();
               }}
               className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-pixel bg-[#1c1e26] hover:bg-[#252833] border border-mc-diamond/50 text-mc-diamond rounded shadow-sm transition-all cursor-pointer"
             >
@@ -362,83 +593,95 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
               <span className="hidden sm:inline">1.21 Mace Hit</span>
             </button>
 
-            {/* User Profile Info */}
+            {/* Authorized Controller (Owner IGN) */}
             <div className="flex items-center gap-2 text-xs font-mono text-slate-300 bg-[#101115] px-3 py-1.5 border border-mc-border rounded">
-              <span>Account: <strong>{userProfile.displayName}</strong></span>
-              <span className="text-slate-600">|</span>
-              <span className="text-mc-diamond flex items-center gap-1 font-bold">
-                <Shield className="w-3 h-3 text-mc-diamond" /> {userProfile.ownerIgn}
-              </span>
-              <button
-                onClick={() => {
-                  sounds.playClick();
-                  onEditProfile();
-                }}
-                title="Edit Owner IGN"
-                className="text-slate-400 hover:text-slate-200 ml-1 cursor-pointer"
-              >
-                <Settings className="w-3 h-3" />
-              </button>
+              <span className="text-slate-500 hidden md:inline">Controller:</span>
+              {isEditingOwner ? (
+                <form onSubmit={handleSaveOwnerIgn} className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={ownerInput}
+                    onChange={(e) => setOwnerInput(e.target.value)}
+                    maxLength={16}
+                    autoFocus
+                    className="w-24 px-1.5 py-0.5 bg-black border border-cyan-500 text-cyan-300 rounded font-mono text-xs outline-none"
+                  />
+                  <button type="submit" className="text-mc-green hover:underline text-[11px]">Save</button>
+                  <button type="button" onClick={() => setIsEditingOwner(false)} className="text-slate-500 hover:text-slate-300 text-[11px]">✕</button>
+                </form>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-mc-diamond flex items-center gap-1 font-bold">
+                    <Shield className="w-3 h-3 text-mc-diamond" /> {userProfile.ownerIgn || 'Player'}
+                  </span>
+                  <button
+                    onClick={() => {
+                      sounds.playClick();
+                      setOwnerInput(userProfile.ownerIgn || 'Player');
+                      setIsEditingOwner(true);
+                    }}
+                    title="Change Authorized In-Game Controller IGN"
+                    className="text-slate-400 hover:text-slate-200 cursor-pointer p-0.5"
+                  >
+                    <Settings className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Disconnect & Switch Bot / Server Button */}
-            {botState.status !== 'offline' && (
+            {/* Disconnect active bot if online */}
+            {currentSlot.botState.status !== 'offline' && (
               <button
-                onClick={handleDisconnectAndSwitch}
+                onClick={handleDisconnectBot}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-pixel bg-amber-950/50 hover:bg-amber-900/80 border border-amber-600/70 text-amber-300 hover:text-amber-200 rounded shadow-sm transition-all cursor-pointer"
-                title="Disconnect bot and return to launcher while staying logged in"
+                title={`Disconnect ${currentSlot.botState.username} and return to launcher`}
               >
-                <LogOut className="w-3.5 h-3.5 text-amber-400 rotate-180" />
-                <span>Disconnect & Switch</span>
+                <RefreshCw className="w-3 h-3 text-amber-400" />
+                <span>Switch / Stop</span>
               </button>
             )}
-
-            {/* Logout Button */}
-            <button
-              onClick={() => {
-                sounds.playClick();
-                logout();
-              }}
-              className="text-slate-400 hover:text-red-400 px-2 py-1 text-xs font-mono flex items-center gap-1 transition-colors cursor-pointer"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
           </div>
         </div>
       </header>
 
-      {/* Main Content Area */}
+      {/* Main Content Area for the Selected Bot Slot */}
       <main className="flex-1 w-full max-w-[1920px] mx-auto p-3 sm:p-6 space-y-5">
-        {botState.status === 'offline' ? (
-          /* Bot is offline: Show Launcher prominently */
+        {currentSlot.botState.status === 'offline' ? (
+          /* Current Slot is Offline -> Render Bot Launcher */
           <div className="max-w-xl mx-auto pt-6">
+            <div className="mb-3 flex items-center justify-between text-xs font-mono text-slate-400 px-1">
+              <span>Configuring: <strong className="text-cyan-400">{activeSlot === 'bot_1' ? 'Slot 1 (Bot 1)' : 'Slot 2 (Bot 2)'}</strong></span>
+              <span>24/7 Keep-Alive via UptimeRobot</span>
+            </div>
             <BotLauncher
-              uid={userProfile.uid}
               recentBotNames={userProfile.recentBotNames || []}
               recentServerIp={userProfile.recentServerIp || ''}
               recentServerIps={userProfile.recentServerIps || []}
-              serverAlert={serverAlert}
+              serverAlert={currentSlot.serverAlert}
               onLaunch={handleLaunchBot}
-              isLaunching={isLaunching}
+              isLaunching={currentSlot.isLaunching}
             />
           </div>
         ) : (
-          /* Bot is online or connecting: Full Live Dashboard */
+          /* Current Slot is Online or Connecting -> Full Live Controller Dashboard */
           <>
             {/* Top HUD: Health, Hunger, Coords, Status */}
-            <HUD botState={botState} onRetryConnect={handleRetryConnect} onChangeUsername={handleChangeUsername} />
+            <HUD
+              botState={currentSlot.botState}
+              onRetryConnect={handleRetryConnect}
+              onChangeUsername={handleChangeUsername}
+            />
 
             {/* Controls & Automation */}
             <ControlPanel
-              ownerIgn={userProfile.ownerIgn}
-              botUsername={botState.username}
-              antiAfk={antiAfk}
-              autoEat={autoEat}
-              autoAttack={autoAttack}
-              aiChat={aiChat}
-              isSleeping={botState.isSleeping}
-              activeTimerRemaining={timerRemaining}
+              ownerIgn={userProfile.ownerIgn || 'Player'}
+              botUsername={currentSlot.botState.username}
+              antiAfk={currentSlot.antiAfk}
+              autoEat={currentSlot.autoEat}
+              autoAttack={currentSlot.autoAttack}
+              aiChat={currentSlot.aiChat}
+              isSleeping={currentSlot.botState.isSleeping}
+              activeTimerRemaining={currentSlot.timerRemaining}
               onToggleAntiAfk={handleToggleAntiAfk}
               onToggleAutoEat={handleToggleAutoEat}
               onToggleAutoAttack={handleToggleAutoAttack}
@@ -457,16 +700,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ userProfile, sessionToken,
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
               {/* Left Column: Live In-Game Chat */}
               <LiveChat
-                messages={chatMessages}
+                messages={currentSlot.chatMessages}
                 onSendMessage={handleSendMessage}
-                botUsername={botState.username}
-                ownerIgn={userProfile.ownerIgn}
+                botUsername={currentSlot.botState.username}
+                ownerIgn={userProfile.ownerIgn || 'Player'}
               />
 
               {/* Right Column: Interactive Minecraft Inventory with Quick Vitals */}
               <InventoryView
-                items={inventoryItems}
-                botState={botState}
+                items={currentSlot.inventoryItems}
+                botState={currentSlot.botState}
                 onTossItem={handleTossItem}
                 onEquipItem={handleEquipItem}
                 onTossAll={handleTossAll}

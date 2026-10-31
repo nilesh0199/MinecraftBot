@@ -192,7 +192,7 @@ export const HUD: React.FC<HUDProps> = ({ botState, onRetryConnect, onChangeUser
             {/* Server Address & Metrics - Large, High Contrast, Easy to Read */}
             <div className="font-sans text-xs sm:text-sm text-slate-300 flex items-center gap-2.5 mt-1 flex-wrap">
               <span className="font-mono text-cyan-300 font-bold bg-[#141824] px-2.5 py-0.5 rounded border border-cyan-500/40 text-xs sm:text-sm tracking-wide shadow-sm">
-                {botState.serverIp ? `${botState.serverIp}:${botState.serverPort}` : 'Ready to Connect'}
+                {botState.serverIp ? (botState.serverPort === 25565 ? botState.serverIp : `${botState.serverIp}:${botState.serverPort}`) : 'Ready to Connect'}
               </span>
               <span className="text-slate-600">•</span>
               <span

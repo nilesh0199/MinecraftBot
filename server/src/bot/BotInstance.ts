@@ -186,7 +186,7 @@ export class BotInstance {
     this.status = 'error';
     this.errorMessage = error;
     this.broadcastState();
-    this.io.to(this.userId).emit('bot-error', error);
+    this.io.to(this.userId).emit('bot-error', { slotId: this.userId, error });
   }
 
   private setupListeners() {
@@ -439,7 +439,7 @@ export class BotInstance {
         this.isExplicitlyStopped = true;
         this.cancelRetryTimer();
         this.broadcastState();
-        this.io.to(this.userId).emit('bot-error', `Kicked: ${reasonStr}`);
+        this.io.to(this.userId).emit('bot-error', { slotId: this.userId, error: `Kicked: ${reasonStr}` });
         this.cleanup();
         return;
       }
@@ -477,6 +477,7 @@ export class BotInstance {
     this.lastEmittedChatMessage = { text, time: now };
 
     this.io.to(this.userId).emit('chat-message', {
+      slotId: this.userId,
       id: Math.random().toString(36).substring(2, 9),
       sender,
       text,
@@ -771,7 +772,7 @@ export class BotInstance {
       this.config.ownerIgn = validation.sanitized;
       this.onOwnerChanged?.(validation.sanitized);
       this.broadcastState();
-      this.io.to(this.userId).emit('owner-updated', { newOwner: validation.sanitized });
+      this.io.to(this.userId).emit('owner-updated', { slotId: this.userId, newOwner: validation.sanitized });
       this.bot.chat(`👑 [Ownership Transferred] ${oldOwner} transferred bot ownership to <${validation.sanitized}>!`);
       return;
     }
@@ -1047,14 +1048,14 @@ export class BotInstance {
     const validation = SecurityValidator.validateUsername(newUsername);
     if (!validation.valid || !validation.sanitized) {
       const err = validation.error || 'Invalid Minecraft username. Must be 3-16 characters (letters, numbers, underscores).';
-      this.io.to(this.userId).emit('bot-error', err);
+      this.io.to(this.userId).emit('bot-error', { slotId: this.userId, error: err });
       return { success: false, error: err };
     }
 
     const sanitizedName = validation.sanitized;
     if (sanitizedName.toLowerCase() === this.config.username.toLowerCase()) {
       const err = 'Bot is already using that username.';
-      this.io.to(this.userId).emit('bot-error', err);
+      this.io.to(this.userId).emit('bot-error', { slotId: this.userId, error: err });
       return { success: false, error: err };
     }
 
@@ -1232,11 +1233,11 @@ export class BotInstance {
 
   private broadcastTimer() {
     if (!this.disconnectTimerEnd) {
-      this.io.to(this.userId).emit('timer-update', null);
+      this.io.to(this.userId).emit('timer-update', { slotId: this.userId, remainingSeconds: null });
       return;
     }
     const remainingSeconds = Math.max(0, Math.round((this.disconnectTimerEnd - Date.now()) / 1000));
-    this.io.to(this.userId).emit('timer-update', remainingSeconds);
+    this.io.to(this.userId).emit('timer-update', { slotId: this.userId, remainingSeconds });
   }
 
   /**
@@ -1383,11 +1384,10 @@ export class BotInstance {
     } catch (e) {}
   }
 
-  public broadcastInventory() {
-    if (!this.bot || !this.bot.inventory) return;
-
+  public getInventory(): any[] {
+    if (!this.bot || !this.bot.inventory) return [];
     try {
-      const items = this.bot.inventory.slots
+      return this.bot.inventory.slots
         .map((item, slot) => {
           if (!item) return null;
           return {
@@ -1401,11 +1401,14 @@ export class BotInstance {
           };
         })
         .filter(Boolean);
-
-      this.io.to(this.userId).emit('inventory-update', items);
     } catch (err) {
-      console.error('Broadcast inventory error:', err);
+      return [];
     }
+  }
+
+  public broadcastInventory() {
+    const items = this.getInventory();
+    this.io.to(this.userId).emit('inventory-update', { slotId: this.userId, items });
   }
 
   /**
@@ -1444,12 +1447,13 @@ export class BotInstance {
     }
   }
 
-  public broadcastState() {
+  public getState(): any {
     const uptimeSeconds = this.uptimeStart > 0
       ? Math.floor((Date.now() - this.uptimeStart) / 1000)
       : 0;
 
-    const payload = {
+    return {
+      slotId: this.userId,
       status: this.status,
       username: this.config.username,
       serverIp: this.config.serverIp,
@@ -1478,7 +1482,10 @@ export class BotInstance {
         nextRetryAt: this.nextRetryAt,
       } : null,
     };
+  }
 
+  public broadcastState() {
+    const payload = this.getState();
     this.io.to(this.userId).emit('bot-state', payload);
   }
 
@@ -1531,6 +1538,7 @@ export class BotInstance {
       this.cancelRetryTimer();
       this.broadcastState();
       this.io.to(this.userId).emit('server-offline', {
+        slotId: this.userId,
         serverIp: this.config.serverIp,
         serverPort: this.config.serverPort,
         attempts: this.maxRetries,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Play, History, Server, Key, Sparkles, AlertCircle, X } from 'lucide-react';
-import { removeRecentServer, clearAllRecentServers } from '../../firebase';
+import { removeRecentServer, clearAllRecentServers } from '../../utils/storage';
 
 export interface BotLaunchConfig {
   username: string;
@@ -14,7 +14,6 @@ export interface BotLaunchConfig {
 }
 
 interface BotLauncherProps {
-  uid?: string;
   recentBotNames: string[];
   recentServerIp: string;
   recentServerIps?: string[];
@@ -27,7 +26,6 @@ interface BotLauncherProps {
 }
 
 export const BotLauncher: React.FC<BotLauncherProps> = ({
-  uid,
   recentBotNames = [],
   recentServerIp = '',
   recentServerIps = [],
@@ -75,8 +73,8 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
     }
     if (onRemoveServer) {
       onRemoveServer(ipToRemove);
-    } else if (uid) {
-      removeRecentServer(uid, ipToRemove).catch(() => {});
+    } else {
+      removeRecentServer(ipToRemove);
     }
   };
 
@@ -85,8 +83,8 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
     setServerAddress('');
     if (onClearServers) {
       onClearServers();
-    } else if (uid) {
-      clearAllRecentServers(uid).catch(() => {});
+    } else {
+      clearAllRecentServers();
     }
   };
 
