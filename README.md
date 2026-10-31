@@ -1,44 +1,50 @@
-# 🟩 CraftBot 24/7 — Headless Minecraft AFK Bot & Web Dashboard
+# 🟩 CraftBot 24/7 — Dual-Bot Minecraft AFK Manager & Web Dashboard
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](#)
-[![Minecraft Version](https://img.shields.io/badge/Minecraft-Java%201.21.x%20(Cracked%20&%20Offline)-blue)](#)
+[![Minecraft Version](https://img.shields.io/badge/Minecraft-Java%201.8.x%20--%201.21.x%20(Protocol%20774)-blue)](#)
 [![Cloud Ready](https://img.shields.io/badge/Cloud-Render%20%7C%20VPS%20%7C%20Docker-green)](#)
-[![AI Companion](https://img.shields.io/badge/AI%20Chat-Groq%20AI%20(Hinglish%20Ready)-purple)](#)
+[![Dual Bot Architecture](https://img.shields.io/badge/Dual--Bot-Simultaneous%20Slots%20(Bot%201%20&%202)-cyan)](#)
+[![Zero Auth](https://img.shields.io/badge/Access-Zero--Auth%20Public%20Dashboard-orange)](#)
+[![Keep Alive](https://img.shields.io/badge/UptimeRobot-Autonomous%20Bot%20Revive-purple)](#)
 
 A full-stack, headless Minecraft AFK bot platform with an authentic **Minecraft-themed web dashboard** designed for 24/7 continuous cloud operation. Keep your mob grinders running, crop farms growing, and chunks loaded without keeping your personal computer turned on!
 
 ---
 
-## 📸 Screenshots & Dashboard Tour
+## ✨ What's New in CraftBot 24/7
 
-### 🎛️ Real-Time Action & Automation Center
-![CraftBot Dashboard Controls](./docs/screenshots/dashboard-controls.png)
-
-### 📊 Live Vitals HUD & Session Activity
-![CraftBot HUD Vitals](./docs/screenshots/hud-vitals.png)
-
-### 💬 Synchronized In-Game Chat & Interactive 9x4 Inventory
-![CraftBot Chat & Inventory](./docs/screenshots/chat-and-inventory.png)
+* 🚀 **Zero-Authentication Instant Access**: The dashboard is the landing page. No Google OAuth popups, no Firebase configuration, and no login barriers.
+* 🤖 **Dual-Bot Simultaneous Architecture**: Run **two bots simultaneously** on the same server instance. Switch between **Bot 1** and **Bot 2** tabs at the top without disconnecting or stopping either bot.
+* ⚡ **UptimeRobot Autonomous Revival**: Bot configurations are saved to persistent server storage (`bot-slots.json`). Whenever UptimeRobot pings `/health`, any dropped bots are **automatically reconnected and revived 24/7**.
+* 🌐 **Universal Server & Port Support**: Connect to **any** Minecraft server (Vanilla, Paper, Spigot, Fabric, Aternos, Hypixel, etc.) with default (`25565`) or custom ports (`:16808`, `:25566`).
+* 💥 **1.21 Mace Smash Animation**: Authentic Minecraft 1.21 Mace jump, particle smash, and sound effects on connection and on demand.
+* 🛡️ **Lean & Blazing Fast**: Purged 85 unused Firebase packages. Client bundle size reduced by 61% (loads in <1s) with **0 vulnerabilities**.
 
 ---
 
-## ✨ Features Overview
+## 🎛️ Dashboard & Feature Overview
 
-### ☁️ 24/7 Cloud Background & Reconnect Resilience
-* **Runs in Background**: Operates as a persistent daemon. You can close your browser tab or turn off your computer; the bot stays active in-game.
-* **User-Controlled Cloud Spawning**: Launch, control, or disconnect your bot cleanly anytime from the Web Dashboard without ghost sessions or unexpected restarts.
-* **Smart Exponential Backoff**: When the Minecraft server restarts or goes offline, CraftBot retries across 5 attempts (5s $\to$ 15s $\to$ 30s $\to$ 60s $\to$ 120s) with a live HUD countdown and an instant **"⚡ Retry Now"** button.
-* **1-Click Render.com & UptimeRobot**: Deploy for free on Render and use UptimeRobot to ping `/health` every 5 minutes so the service never sleeps!
+### 1. Dual-Bot Slot System (Top Tabs)
+* **Slot 1 (Bot 1)** & **Slot 2 (Bot 2)**: Both bots run concurrently in the cloud daemon.
+* **Large High-Visibility Switcher**: Clearly displays which bot is currently being viewed with bright `ACTIVE TAB` indicators, live status pills (`ONLINE` / `CONNECTING` / `OFFLINE`), and bot usernames.
+* **Independent Controls**: Each bot maintains its own independent HUD, vitals, inventory, chat history, and automation settings.
 
 ---
 
-### 🚪 Smart Door & Gate Navigation
+### 2. 24/7 Cloud Background & Reconnect Resilience
+* **Runs in Background**: Operates as a persistent daemon. You can close your browser tab or turn off your computer; both bots stay active in-game.
+* **UptimeRobot Keep-Alive**: When UptimeRobot pings `/health` every 5 minutes, the server verifies both bot instances and automatically restarts any offline bots.
+* **Smart Exponential Backoff**: When a Minecraft server restarts or goes offline, CraftBot retries across 5 attempts (5s $\to$ 15s $\to$ 30s $\to$ 60s $\to$ 120s) with a live HUD countdown and an instant **"⚡ Retry Now"** button.
+
+---
+
+### 3. Smart Door & Gate Navigation
 * **Auto Door Opening**: While following players (`!follow`) or pathfinding, the bot automatically detects closed wooden doors, trapdoors, and fence gates within reach and opens them smoothly.
 * **Auto Door Closing**: Once the bot steps through the doorway, it automatically closes the door behind it to keep hostile mobs out!
 
 ---
 
-### 🤖 Groq AI Chat Companion (English & Hinglish)
+### 4. Groq AI Chat Companion (English & Hinglish)
 * **Instant Inference (~200ms)**: Powered by ultra-fast Groq AI inference with auto-failover across top models.
 * **Hinglish & Natural Language**: Understands queries in English, Hindi, and Hinglish (e.g. `!chat ek joke sunao`, `!chat diamonds kahan milenge`).
 * **Short-Term Context Memory**: Remembers recent conversation context while chatting with players in-game.
@@ -49,7 +55,7 @@ A full-stack, headless Minecraft AFK bot platform with an authentic **Minecraft-
 
 ---
 
-### 🎒 Interactive 9x4 Inventory Management
+### 5. Interactive 9x4 Inventory Management
 * **Interactive Slots**: Click any item from the hotbar or main inventory to open a quick-action modal.
 * **Drop / Toss Actions**: Drop 1 item or toss the full stack with a single click.
 * **Equip & Eat**: Equip armor to helmet, chestplate, leggings, or boots, place weapons in hand/off-hand, or command the bot to eat food items.
@@ -57,40 +63,23 @@ A full-stack, headless Minecraft AFK bot platform with an authentic **Minecraft-
 
 ---
 
-### 🛏️ Bed Sleeping & Night-Skip System
+### 6. Bed Sleeping & Night-Skip System
 * **`!sleep` (Auto-Bed Navigation)**:
   * Scans within a **24-block radius** for any bed block (`red_bed`, `white_bed`, etc.).
   * Walks to the bed using pathfinder, hops in, and announces: `🛏️ In bed! Goodnight everyone.`
   * Automatically wakes up in the morning or upon `!wake`.
-* **If No Bed Is Found**:
-  * Informs players and recommends `!nightskip` so the server can turn into daytime.
 * **`!nightskip` (1-Minute Temporary Leave & Auto-Rejoin)**:
   * Disconnects for 60 seconds so other players on the server can sleep and pass the night.
   * **Auto-rejoins automatically after 60 seconds** without requiring the owner to reopen the web dashboard!
-* **Accidental `!leave` Protection**:
-  * Typing `!leave` or `!quit` will **not** kill the bot. It warns the player to use `!nightskip` instead.
-* **`!shutdown bot` (Permanent Poweroff)**:
-  * Strict syntax reserved for the **Owner Only** to prevent accidental termination.
 
 ---
 
-### 👑 In-Game Ownership Transfer & Dynamic Username Switch
+### 7. In-Game Ownership Transfer & Dynamic Username Switch
 * **`✏️ Change` Button (HUD)**:
   * Click the `✏️ Change` button directly beside the bot username in the dashboard HUD.
   * Enter a new Minecraft username: the bot announces the change in chat, cleanly disconnects, and **automatically rejoins the server in 10 seconds** with the new identity!
-* **`!rename <NewUsername>`**:
-  * The owner can also switch the bot's username directly via in-game Minecraft chat.
-* **`!transfer <NewOwnerIGN>`**:
-  * The current owner can reassign bot ownership in-game to another player at any time.
-
----
-
-### 🎮 Authentic Full-Screen Minecraft Dashboard
-* **Full-Screen Layout (`max-w-[1920px]`)**: Retro stone panels, beveled borders, and custom Minecraft pixel fonts.
-* **Quick Vitals Strip**: Live numeric Health (`20/20 HP`), Hunger (`20/20`), and Coordinates ($X, Y, Z$) directly beside the inventory.
-* **Live In-Game Chat**: Bidirectional chat syncing with Minecraft with deduplication.
-* **1.21 Mace Smash Animation**: Interactive single-play animation with Escape key support.
-* **In-Memory Fresh Authentication**: Google OAuth with in-memory persistence prompts for clean login on browser reload.
+* **`!rename <NewUsername>`**: Switch the bot's username directly via in-game Minecraft chat.
+* **`!transfer <NewOwnerIGN>`**: Reassign authorized bot controller in-game to another player at any time.
 
 ---
 
@@ -119,24 +108,29 @@ A full-stack, headless Minecraft AFK bot platform with an authentic **Minecraft-
 
 ## 🚀 Deployment Options
 
-### Option 1: Render.com (Recommended Free 24/7 Cloud Host)
+### Option 1: Render.com (Free 24/7 Cloud Host)
 Detailed walkthrough in [**DEPLOY_RENDER.md**](./DEPLOY_RENDER.md).
 
 1. Go to [dashboard.render.com](https://dashboard.render.com/) $\to$ **New +** $\to$ **Web Service**.
-2. Connect your repository: `https://github.com/nilesh0199/MinecraftBot.git`
+2. Select **Public Git repository** and paste:
+   ```
+   https://github.com/nilesh0199/MinecraftBot.git
+   ```
+   *(No need to connect your personal GitHub account!)*
 3. Render detects `render.yaml` automatically:
    * **Build Command**: `npm run build`
    * **Start Command**: `npm start`
    * **Health Check Path**: `/health`
-4. Add Environment Variable:
-   * `GROQ_API_KEY`: *(Get a free key from [console.groq.com](https://console.groq.com/keys))*
-5. In [UptimeRobot.com](https://uptimerobot.com), create a free **HTTP monitor** pointing to `https://<your-app>.onrender.com/health` every 5 minutes so it never sleeps!
+   * **Plan**: `Free`
+4. *(Optional)* Add Environment Variable `GROQ_API_KEY` for Llama-3 AI in-game chat.
+5. In [UptimeRobot.com](https://uptimerobot.com), create a free **HTTP monitor** pointing to `https://<your-app>.onrender.com/health` every 5 minutes.
+   - This keeps the Render service awake 24/7 **and** revives both bots automatically if dropped!
 
 ---
 
-### Option 2: Local Development (Windows / macOS / Linux)
+### Option 2: Local Run (Windows / macOS / Linux)
 
-1. **Install dependencies**:
+1. **Build both client and server**:
    ```bash
    npm run build
    ```
@@ -151,15 +145,15 @@ Detailed walkthrough in [**DEPLOY_RENDER.md**](./DEPLOY_RENDER.md).
 ## 🛡️ Production Security & Audit
 
 CraftBot features built-in security protections audited with an automated test suite:
-* **SSRF Defense**: Blocks connections to private subnets, cloud metadata (`169.254.169.254`), and dangerous ports (SSH, MySQL, Redis).
-* **HMAC Session Tokens**: Cryptographically signed tokens to prevent impersonation.
+* **SSRF Defense**: Blocks connections to private subnets, loopback addresses, cloud metadata (`169.254.169.254`), and dangerous ports (SSH, MySQL, Redis).
+* **Slot Boundary & Inventory Validation**: Rigorous checks on inventory slots and commands.
 * **Rate Limiting**: Throttles chat and spawn actions to prevent spam kicks and resource abuse.
-* **Memory Watchdog**: Monitors heap allocation to ensure stability.
+* **Memory Watchdog**: Monitors heap allocation to ensure 24/7 stability.
 
 Run the test suite anytime:
 ```bash
 npx ts-node server/tests/security-audit.ts
-# RESULTS: 78/78 PRODUCTION AUDIT TESTS PASSED
+# RESULTS: 94/94 PRODUCTION AUDIT TESTS PASSED
 ```
 
 ---

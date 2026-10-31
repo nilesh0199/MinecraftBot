@@ -1,6 +1,6 @@
 # 🚀 CraftBot 24/7 — Render & UptimeRobot Deployment Guide
 
-Deploy CraftBot 24/7 on **Render.com** (Free Tier) and keep it running **24/7 with UptimeRobot** — with zero container sleeping and instant Llama-3.1 AI in-game chat via Groq!
+Deploy CraftBot 24/7 on **Render.com** (Free Tier) and keep it running **24/7 with UptimeRobot** — with zero container sleeping, dual simultaneous bots, and instant Llama-3 AI in-game chat via Groq!
 
 ---
 
@@ -8,13 +8,14 @@ Deploy CraftBot 24/7 on **Render.com** (Free Tier) and keep it running **24/7 wi
 
 ### Step 1: Deploy on Render.com (2 minutes)
 1. Go to [Render Dashboard](https://dashboard.render.com/) and click **New +** $\to$ **Web Service**.
-2. Connect your GitHub repository:
+2. Under "Existing image or public Git repository", select **Public Git repository** and paste:
    ```
    https://github.com/nilesh0199/MinecraftBot.git
    ```
+   *(You do NOT need to connect your GitHub account!)*
 3. Configure settings (or let `render.yaml` configure them automatically):
    * **Name**: `craftbot-24-7`
-   * **Region**: Oregon (or nearest to your Minecraft server)
+   * **Region**: Oregon or Frankfurt
    * **Branch**: `main`
    * **Runtime**: `Node`
    * **Build Command**: `npm run build`
@@ -26,25 +27,25 @@ Deploy CraftBot 24/7 on **Render.com** (Free Tier) and keep it running **24/7 wi
    ```
 5. *(Optional)* Under **Environment Variables**, add:
    * `GROQ_API_KEY`: *(Your free Groq API key from [console.groq.com](https://console.groq.com/keys))*
-   * `FIREBASE_API_KEY`: *(Optional, for Google Login)*
-   * `FIREBASE_PROJECT_ID`: `minecraftbot-639a5`
 6. Click **Deploy Web Service**!
    Render will build the React SPA frontend and the Node.js backend. Once complete, your URL will be:
    `https://craftbot-24-7-xxxx.onrender.com`
 
 ---
 
-### Step 2: Prevent Sleep with UptimeRobot (100% Free 24/7)
-Render's free tier spins down after 15 minutes of inactivity. Pinging `/health` every 5 minutes keeps it **awake 24 hours a day, 7 days a week**:
+### Step 2: Keep-Alive & Auto-Revive with UptimeRobot (100% Free 24/7)
+Render's free tier spins down after 15 minutes of inactivity. Pinging `/health` every 5 minutes keeps it **awake 24 hours a day, 7 days a week AND revives both bots if they ever disconnect**:
 
 1. Sign up for free at [UptimeRobot.com](https://uptimerobot.com).
 2. Click **+ Add New Monitor**:
    * **Monitor Type**: `HTTP(s)`
-   * **Friendly Name**: `CraftBot Health Ping`
+   * **Friendly Name**: `CraftBot Dual-Bot Keep-Alive`
    * **URL (or IP)**: `https://<YOUR-RENDER-SUBDOMAIN>.onrender.com/health`
    * **Monitoring Interval**: `Every 5 minutes` (Standard Free Plan)
 3. Click **Create Monitor**.
-4. **Done!** UptimeRobot will ping your server every 5 minutes, keeping CraftBot active 24/7 within Render's 750 free monthly hours!
+4. **Done!** Every 5 minutes, UptimeRobot pings your server:
+   - Prevents the Render container from sleeping.
+   - Automatically checks both **Bot 1** and **Bot 2**: if either bot was disconnected or dropped, it automatically reconnects it!
 
 ---
 
