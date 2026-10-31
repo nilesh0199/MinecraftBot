@@ -277,6 +277,15 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Event: Trigger AI Joke in Chat
+  socket.on('tell-joke', async (data) => {
+    const slotId = getSlot(data);
+    const bot = botManager.getBot(slotId);
+    if (bot) {
+      await bot.tellJoke();
+    }
+  });
+
   // Event: Toggle Anti-AFK
   socket.on('toggle-anti-afk', (data) => {
     const slotId = getSlot(data);

@@ -492,6 +492,7 @@ class BotInstance {
             const versionMatch = reasonStr.match(/(?:use|on|version)\s*(1\.\d+(?:\.\d+)?)/i);
             if (versionMatch && versionMatch[1]) {
                 console.log(`[Bot ${this.config.username}] Detected server version from kick: ${versionMatch[1]}. Auto-adapting version.`);
+                this.emitChatMessage(`ℹ️ Detected server version ${versionMatch[1]}. Auto-adapting for reconnect...`, undefined, true);
                 this.config.version = versionMatch[1];
             }
             else if (this.config.version &&
@@ -500,6 +501,7 @@ class BotInstance {
                     reasonStr.toLowerCase().includes('protocol') ||
                     reasonStr.includes('Connection rejected'))) {
                 console.log(`[Bot ${this.config.username}] Handshake rejected with version ${this.config.version}. Switching to auto-negotiate for retry.`);
+                this.emitChatMessage(`⚠️ Server rejected version ${this.config.version}. Auto-detecting exact server version on retry...`, undefined, true);
                 this.config.version = 'auto';
             }
             // Check if kick is permanent ban or whitelist rejection
@@ -695,7 +697,13 @@ class BotInstance {
         // 1. HELP / COMMANDS (Available for everyone)
         if (lower === '!help' || lower === '!commands' || lower === '!cmds') {
             this.lastInGameCommandTime = now;
-            this.bot.chat(`[Commands] Public: !help, !chat <msg>, !sleep, !wake, !nightskip, !follow, !stop, !status | Owner (${this.config.ownerIgn}): !rename <Name>, !shutdown bot, !transfer <IGN>, !ai on/off, !dropall, !eat, !attack`);
+            this.bot.chat(`[Commands] Public: !help, !joke, !chat <msg>, !sleep, !wake, !nightskip, !follow, !stop, !status | Owner (${this.config.ownerIgn}): !rename <Name>, !shutdown bot, !transfer <IGN>, !ai on/off, !dropall, !eat, !attack`);
+            return;
+        }
+        // 1b. JOKE / HUMOR (Available for everyone)
+        if (lower === '!joke' || lower === '!funny' || lower === '!telljoke') {
+            this.lastInGameCommandTime = now;
+            this.tellJoke();
             return;
         }
         // 2. SLEEP IN BED (Available for everyone)
@@ -923,6 +931,54 @@ class BotInstance {
         catch (err) {
             console.error(`[Bot ${this.config.username}] Failed to send chat:`, err);
         }
+    }
+    /**
+     * Tells a witty Minecraft joke in in-game chat and broadcasts it to the dashboard
+     */
+    async tellJoke() {
+        const fallbackJokes = [
+            "Why can't the Ender Dragon read a book? Because she always starts at the End!",
+            "Why did the creeper cross the road? To get to the other ssssside!",
+            "Why are skeletons so calm? Because nothing gets under their skin!",
+            "How does Steve get his exercise? Running around the block!",
+            "What is a Ghast's favorite country? The Nether-lands!",
+            "Why did the zombie go to school? To improve his dead-ucation!",
+            "Why don't blazes ever win at poker? They always burn through their deck!",
+            "What did Steve say to the iron golem? Thanks a ton!",
+            "Why was the pickaxe late for work? It had too many breaks!",
+            "How do Minecraft players party? They build the roof and raise it!",
+            "Why are piglins bad at sports? They always hog the ball!",
+            "What do you call a witch in the sand? A sandwich!",
+        ];
+        let joke = null;
+        if (this.groqService.hasApiKey(this.config.groqApiKey)) {
+            try {
+                joke = await this.groqService.generateReply({
+                    sender: this.config.ownerIgn,
+                    message: "Tell a short, funny 1-line Minecraft joke or pun under 100 characters.",
+                    botUsername: this.config.username,
+                    ownerIgn: this.config.ownerIgn,
+                    customApiKey: this.config.groqApiKey,
+                });
+            }
+            catch (e) { }
+        }
+        if (!joke || joke.startsWith('[AI Notice]')) {
+            joke = fallbackJokes[Math.floor(Math.random() * fallbackJokes.length)];
+        }
+        // Clean up formatting
+        joke = joke.replace(/[\r\n\t]/g, ' ').trim();
+        // 1. Send in Minecraft server chat if bot is online
+        if (this.bot && this.status === 'online') {
+            try {
+                this.bot.chat(joke);
+            }
+            catch (err) {
+                console.error(`[Bot ${this.config.username}] Failed to chat joke:`, err);
+            }
+        }
+        // 2. Broadcast to dashboard live chat feed
+        this.emitChatMessage(joke, this.config.username);
     }
     /**
      * Follow a player with pathfinder (with error boundary)

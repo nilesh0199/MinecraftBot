@@ -309,6 +309,45 @@ export const Dashboard: React.FC<DashboardProps> = ({
       ...config,
       ownerIgn: userProfile.ownerIgn || 'Player',
     });
+
+    // 20-second safety watchdog: Auto-unlock launcher if bot didn't connect
+    const launchTimeoutSlot = activeSlot;
+    setTimeout(() => {
+      setSlots((prev) => {
+        if (prev[launchTimeoutSlot]?.isLaunching && prev[launchTimeoutSlot]?.botState.status === 'offline') {
+          return {
+            ...prev,
+            [launchTimeoutSlot]: {
+              ...prev[launchTimeoutSlot],
+              isLaunching: false,
+            },
+          };
+        }
+        return prev;
+      });
+    }, 20000);
+  };
+
+  const handleCancelLaunch = (slotId: SlotId) => {
+    sounds.playClick();
+    socket?.emit('stop-bot', { slotId });
+    setSlots((prev) => ({
+      ...prev,
+      [slotId]: {
+        ...prev[slotId],
+        isLaunching: false,
+        serverAlert: null,
+        botState: {
+          ...prev[slotId].botState,
+          status: 'offline',
+        },
+      },
+    }));
+  };
+
+  const handleTriggerJoke = () => {
+    sounds.playClick();
+    socket?.emit('tell-joke', { slotId: activeSlot });
   };
 
   // Actions for current active bot
@@ -697,6 +736,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               serverAlert={currentSlot.serverAlert}
               onLaunch={handleLaunchBot}
               isLaunching={currentSlot.isLaunching}
+              onCancelLaunch={() => handleCancelLaunch(activeSlot)}
             />
           </div>
         ) : (
@@ -740,6 +780,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <LiveChat
                 messages={currentSlot.chatMessages}
                 onSendMessage={handleSendMessage}
+                onTriggerJoke={handleTriggerJoke}
                 botUsername={currentSlot.botState.username}
                 ownerIgn={userProfile.ownerIgn || 'Player'}
               />

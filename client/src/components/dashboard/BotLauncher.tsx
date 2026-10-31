@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, History, Server, Key, Sparkles, AlertCircle, X } from 'lucide-react';
+import { Play, History, Server, Key, Sparkles, AlertCircle, X, Square } from 'lucide-react';
 import { removeRecentServer, clearAllRecentServers } from '../../utils/storage';
 
 export interface BotLaunchConfig {
@@ -20,6 +20,7 @@ interface BotLauncherProps {
   serverAlert?: string | null;
   onLaunch: (config: BotLaunchConfig) => Promise<void>;
   isLaunching: boolean;
+  onCancelLaunch?: () => void;
   onClose?: () => void;
   onRemoveServer?: (serverIp: string) => void;
   onClearServers?: () => void;
@@ -32,6 +33,7 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
   serverAlert,
   onLaunch,
   isLaunching,
+  onCancelLaunch,
   onClose,
   onRemoveServer,
   onClearServers,
@@ -44,7 +46,7 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
     : '';
   const [serverAddress, setServerAddress] = useState(initialAddress);
   const [authPassword, setAuthPassword] = useState('');
-  const [version, setVersion] = useState('1.21.11');
+  const [version, setVersion] = useState('auto');
   const [autoEat, setAutoEat] = useState(true);
   const [antiAfk, setAntiAfk] = useState(true);
   const [autoAttack, setAutoAttack] = useState(false);
@@ -310,8 +312,8 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
             onChange={(e) => setVersion(e.target.value)}
             className="w-full bg-[#121318] border border-mc-border px-3 py-2 text-xs text-slate-200 rounded focus:border-mc-green focus:outline-none font-mono cursor-pointer"
           >
-            <option value="1.21.11">1.21.11 (Default)</option>
-            <option value="auto">⚡ Auto-Negotiate (Auto-Detect Server Version)</option>
+            <option value="auto">⚡ Auto-Negotiate (Auto-Detect Server Version - Recommended)</option>
+            <option value="1.21.11">1.21.11 (Protocol 774)</option>
             <option value="1.21.4">1.21.4 (Latest Vanilla / Paper)</option>
             <option value="1.21.3">1.21.3</option>
             <option value="1.21.1">1.21.1 (Standard 1.21)</option>
@@ -384,14 +386,37 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
         )}
 
         <div className="pt-2">
-          <button
-            type="submit"
-            disabled={isLaunching}
-            className="w-full mc-btn-green py-3.5 flex items-center justify-center gap-2 cursor-pointer shadow-lg hover:scale-[1.01] active:scale-[0.99] transition-transform"
-          >
-            <Play className="w-4 h-4 fill-current" />
-            <span>{isLaunching ? 'Connecting Bot to Server...' : 'Spawn Bot Now'}</span>
-          </button>
+          {isLaunching ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled
+                className="flex-1 mc-btn-green py-3.5 flex items-center justify-center gap-2 opacity-90 cursor-wait shadow-lg"
+              >
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span className="font-pixel text-xs">Connecting Bot to Server...</span>
+              </button>
+              {onCancelLaunch && (
+                <button
+                  type="button"
+                  onClick={onCancelLaunch}
+                  className="px-4 py-3.5 bg-red-950/90 hover:bg-red-900 border border-red-600/90 hover:border-red-500 text-red-200 font-pixel text-xs rounded transition-all flex items-center gap-1.5 shadow-lg cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                  title="Cancel connecting and unlock launcher"
+                >
+                  <Square className="w-3.5 h-3.5 fill-current text-red-400" />
+                  <span>Stop / Cancel</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <button
+              type="submit"
+              className="w-full mc-btn-green py-3.5 flex items-center justify-center gap-2 cursor-pointer shadow-lg hover:scale-[1.01] active:scale-[0.99] transition-transform"
+            >
+              <Play className="w-4 h-4 fill-current" />
+              <span>Spawn Bot Now</span>
+            </button>
+          )}
         </div>
       </form>
     </div>

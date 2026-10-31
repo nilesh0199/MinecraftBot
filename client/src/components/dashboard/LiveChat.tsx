@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Terminal, MessageSquare, Copy, Check, ChevronDown } from 'lucide-react';
+import { Send, Terminal, MessageSquare, Copy, Check, ChevronDown, Sparkles } from 'lucide-react';
 import { sounds } from '../../utils/audio';
 
 export interface ChatMessage {
@@ -14,6 +14,7 @@ export interface ChatMessage {
 interface LiveChatProps {
   messages: ChatMessage[];
   onSendMessage: (text: string) => void;
+  onTriggerJoke?: () => void;
   botUsername: string;
   ownerIgn: string;
 }
@@ -71,6 +72,7 @@ function parseMinecraftColorCodes(text: string) {
 export const LiveChat: React.FC<LiveChatProps> = ({
   messages,
   onSendMessage,
+  onTriggerJoke,
   botUsername,
   ownerIgn,
 }) => {
@@ -180,17 +182,36 @@ export const LiveChat: React.FC<LiveChatProps> = ({
           </span>
         </div>
 
-        {/* Quick Slash Commands */}
-        <div className="flex items-center gap-1 font-mono text-[10px] overflow-x-auto max-w-[280px]">
-          {slashCommands.map((cmd) => (
-            <button
-              key={cmd}
-              onClick={() => onSendMessage(cmd)}
-              className="px-2 py-0.5 bg-[#1f2029] hover:bg-[#282a36] border border-mc-border text-slate-300 rounded whitespace-nowrap transition-colors cursor-pointer"
-            >
-              {cmd}
-            </button>
-          ))}
+        {/* Toolbar: AI Joke & Quick Slash Commands */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              sounds.playClick();
+              if (onTriggerJoke) {
+                onTriggerJoke();
+              } else {
+                onSendMessage('!joke');
+              }
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 hover:border-amber-400 text-amber-300 font-pixel text-[11px] rounded transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95"
+            title="Ask AI to tell a funny Minecraft joke in chat"
+          >
+            <Sparkles className="w-3 h-3 text-amber-400 fill-amber-400 animate-pulse" />
+            <span>AI Joke</span>
+          </button>
+
+          <div className="flex items-center gap-1 font-mono text-[10px] overflow-x-auto max-w-[240px]">
+            {slashCommands.map((cmd) => (
+              <button
+                key={cmd}
+                onClick={() => onSendMessage(cmd)}
+                className="px-2 py-0.5 bg-[#1f2029] hover:bg-[#282a36] border border-mc-border text-slate-300 rounded whitespace-nowrap transition-colors cursor-pointer"
+              >
+                {cmd}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
