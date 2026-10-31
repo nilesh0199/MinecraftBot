@@ -160,10 +160,11 @@ export class BotInstance {
         hideErrors: false,
       };
 
-      // Version: Use explicitly selected version if provided and not 'auto'
-      if (this.config.version && this.config.version !== 'auto') {
-        botOpts.version = this.config.version;
-      }
+      // Version: Use explicitly selected version or default to 1.21.11 to avoid slow autoVersion pings
+      const selectedVersion = (this.config.version && this.config.version !== 'auto')
+        ? this.config.version
+        : '1.21.11';
+      botOpts.version = selectedVersion;
 
       this.bot = mineflayer.createBot(botOpts);
 

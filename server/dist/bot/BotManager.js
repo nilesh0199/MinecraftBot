@@ -226,7 +226,13 @@ class BotManager {
             }
         });
         process.on('unhandledRejection', (reason) => {
-            console.error('[UNHANDLED REJECTION]:', reason?.message || reason);
+            const msg = reason?.message || String(reason);
+            const isNetError = msg.includes('ETIMEDOUT') || msg.includes('ECONNRESET') || msg.includes('ECONNREFUSED');
+            if (isNetError) {
+                console.warn(`[Network] Connection attempt timed out or refused (${msg}). Auto-reconnect active.`);
+                return;
+            }
+            console.error('[UNHANDLED REJECTION]:', msg);
         });
     }
 }

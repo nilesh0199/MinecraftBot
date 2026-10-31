@@ -46,7 +46,7 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
     : '';
   const [serverAddress, setServerAddress] = useState(initialAddress);
   const [authPassword, setAuthPassword] = useState('');
-  const [version, setVersion] = useState('auto');
+  const [version, setVersion] = useState('1.21.11');
   const [autoEat, setAutoEat] = useState(true);
   const [antiAfk, setAntiAfk] = useState(true);
   const [autoAttack, setAutoAttack] = useState(false);
