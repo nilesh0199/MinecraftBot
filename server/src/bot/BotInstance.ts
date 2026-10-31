@@ -40,6 +40,8 @@ export class BotInstance {
 
   private lastInGameCommandTime: number = 0;
   private hasAnnouncedSpawn: boolean = false;
+  private spawnTime: number = 0;
+  private lastPlayerGreetingTime: number = 0;
   private lastEmittedChatMessage: { text: string; time: number } = { text: '', time: 0 };
   private trackedDoors: Map<string, { x: number; y: number; z: number; openedAt: number; initialDist: number; minDist: number }> = new Map();
   private doorCooldowns: Map<string, number> = new Map();
@@ -263,6 +265,7 @@ export class BotInstance {
         this.emitChatMessage(`🌍 Spawned into world! Bot is online and active.`, undefined, true);
         this.status = 'online';
         this.uptimeStart = Date.now();
+        this.spawnTime = Date.now();
         this.errorMessage = null;
         this.retryCount = 0;
         this.cancelRetryTimer();
@@ -430,6 +433,39 @@ export class BotInstance {
         this.handleWhisperFromText(textToDisplay);
       } catch (err) {
         console.error('System message handling error:', err);
+      }
+    });
+
+    // Welcome Greeting for New Players Joining (with 10-minute anti-spam cooldown)
+    this.bot.on('playerJoined', (player: any) => {
+      try {
+        if (!player || !player.username) return;
+
+        // Never greet self or bot username
+        const ign = String(player.username).trim();
+        if (!ign || ign.toLowerCase() === this.config.username.toLowerCase()) return;
+        if (this.bot?.username && ign.toLowerCase() === this.bot.username.toLowerCase()) return;
+
+        // Skip during initial 8 seconds of spawn to prevent greeting all players already on the server
+        if (Date.now() - this.spawnTime < 8000) return;
+
+        // Anti-spam cooldown: at most 1 greeting every 10 minutes if players join quickly
+        const now = Date.now();
+        const tenMinutesMs = 10 * 60 * 1000;
+        if (now - this.lastPlayerGreetingTime < tenMinutesMs) {
+          return;
+        }
+
+        this.lastPlayerGreetingTime = now;
+        const welcomeMsg = `Hello ${ign}! Type !help for commands`;
+
+        console.log(`[Bot ${this.config.username}] Welcomed joining player ${ign}: "${welcomeMsg}"`);
+        if (this.status === 'online' && this.bot) {
+          this.bot.chat(welcomeMsg);
+        }
+        this.emitChatMessage(`👋 ${welcomeMsg}`, this.config.username, false);
+      } catch (err) {
+        console.warn(`[Bot ${this.config.username}] Error in playerJoined greeting:`, err);
       }
     });
 
