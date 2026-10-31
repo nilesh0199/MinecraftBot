@@ -215,7 +215,7 @@ io.on('connection', (socket) => {
   socket.on('start-bot', (data) => {
     const slotId = getSlot(data);
     const { host, port } = SecurityValidator.cleanServerAddressAndPort(data.serverIp, data.serverPort);
-    const cleanedVersion = (data.version && data.version !== 'auto' && data.version !== '1.21.11')
+    const cleanedVersion = (data.version && data.version !== 'auto')
       ? data.version
       : undefined;
 

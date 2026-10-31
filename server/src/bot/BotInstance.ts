@@ -160,8 +160,8 @@ export class BotInstance {
         hideErrors: false,
       };
 
-      // Version: Use explicitly selected version if provided and not 'auto' or '1.21.11'
-      if (this.config.version && this.config.version !== 'auto' && this.config.version !== '1.21.11') {
+      // Version: Use explicitly selected version if provided and not 'auto'
+      if (this.config.version && this.config.version !== 'auto') {
         botOpts.version = this.config.version;
       }
 
@@ -546,6 +546,15 @@ export class BotInstance {
       if (versionMatch && versionMatch[1]) {
         console.log(`[Bot ${this.config.username}] Detected server version from kick: ${versionMatch[1]}. Auto-adapting version.`);
         this.config.version = versionMatch[1];
+      } else if (
+        this.config.version &&
+        this.config.version !== 'auto' &&
+        (reasonStr.toLowerCase().includes('outdated') ||
+         reasonStr.toLowerCase().includes('protocol') ||
+         reasonStr.includes('Connection rejected'))
+      ) {
+        console.log(`[Bot ${this.config.username}] Handshake rejected with version ${this.config.version}. Switching to auto-negotiate for retry.`);
+        this.config.version = 'auto';
       }
 
       // Check if kick is permanent ban or whitelist rejection

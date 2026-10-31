@@ -190,7 +190,7 @@ io.on('connection', (socket) => {
     socket.on('start-bot', (data) => {
         const slotId = getSlot(data);
         const { host, port } = validator_1.SecurityValidator.cleanServerAddressAndPort(data.serverIp, data.serverPort);
-        const cleanedVersion = (data.version && data.version !== 'auto' && data.version !== '1.21.11')
+        const cleanedVersion = (data.version && data.version !== 'auto')
             ? data.version
             : undefined;
         const config = {

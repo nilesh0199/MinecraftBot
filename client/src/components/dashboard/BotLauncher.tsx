@@ -44,7 +44,7 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
     : '';
   const [serverAddress, setServerAddress] = useState(initialAddress);
   const [authPassword, setAuthPassword] = useState('');
-  const [version, setVersion] = useState('auto');
+  const [version, setVersion] = useState('1.21.11');
   const [autoEat, setAutoEat] = useState(true);
   const [antiAfk, setAntiAfk] = useState(true);
   const [autoAttack, setAutoAttack] = useState(false);
@@ -121,7 +121,7 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
         serverIp: host,
         serverPort: port,
         authPassword: authPassword.trim() || undefined,
-        version: (version && version !== 'auto' && version !== '1.21.11') ? version : undefined,
+        version: (version && version !== 'auto') ? version : undefined,
         autoEat,
         antiAfk,
         autoAttack,
@@ -310,6 +310,7 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
             onChange={(e) => setVersion(e.target.value)}
             className="w-full bg-[#121318] border border-mc-border px-3 py-2 text-xs text-slate-200 rounded focus:border-mc-green focus:outline-none font-mono cursor-pointer"
           >
+            <option value="1.21.11">1.21.11 (Default)</option>
             <option value="auto">⚡ Auto-Negotiate (Auto-Detect Server Version)</option>
             <option value="1.21.4">1.21.4 (Latest Vanilla / Paper)</option>
             <option value="1.21.3">1.21.3</option>
