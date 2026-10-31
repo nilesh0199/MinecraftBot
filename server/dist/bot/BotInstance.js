@@ -167,6 +167,21 @@ class BotInstance {
                         });
                     }
                 });
+                // 1.21+ Player Knockback & Velocity Fix:
+                // In Minecraft 1.21+, lpVec3 packets are decoded directly into float blocks/tick.
+                // Mineflayer's internal entities plugin mistakenly divides this float by 8000,
+                // reducing knockback to 0.00005 (which prismarine-physics rounds to 0).
+                // Here we restore the real knockback vector to bot.entity.velocity so player hits push the bot naturally.
+                client.on('entity_velocity', (packet) => {
+                    if (!this.bot?.entity || packet.entityId !== this.bot.entity.id)
+                        return;
+                    if (packet.velocity && typeof packet.velocity.x === 'number') {
+                        const isModern = this.bot.version && (this.bot.version.startsWith('1.21') || this.bot.version.startsWith('1.22'));
+                        if (isModern) {
+                            this.bot.entity.velocity.set(packet.velocity.x, packet.velocity.y, packet.velocity.z);
+                        }
+                    }
+                });
             };
             if (this.bot?._client) {
                 attachClientListeners(this.bot._client);
