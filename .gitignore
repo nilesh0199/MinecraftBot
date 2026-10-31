@@ -3,7 +3,7 @@ node_modules/
 client/node_modules/
 server/node_modules/
 
-# Environment files
+# Environment and Secrets
 .env
 .env.*
 *.env
@@ -12,10 +12,22 @@ client/.env.*
 server/.env
 server/.env.*
 
+# Local Server Data & Slots Persistence (Prevents leaking server IPs / instances)
+server/data/
+data/
+bot-slots.json
+server/bot-slots.json
+active_bots.json
+server/active_bots.json
+
+# Logs & Diagnostics
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
 # Archives & Temporary files
 *.zip
 temp_deploy/
-active_bots.json
-server/active_bots.json
 .DS_Store
 Thumbs.db

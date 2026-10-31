@@ -177,7 +177,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           ...prev,
           [targetSlot]: {
             ...prevSlot,
-            isLaunching: state.status === 'online' ? false : prevSlot.isLaunching,
+            isLaunching: (state.status === 'online' || state.status === 'offline' || state.status === 'error') ? false : prevSlot.isLaunching,
             botState: {
               ...prevSlot.botState,
               ...state,

@@ -23,8 +23,6 @@ class BotInstance {
     disconnectTimer = null;
     disconnectTimerEnd = null;
     stateBroadcastInterval = null;
-    connectionHealthInterval = null;
-    lastPacketTime = 0;
     lastInGameCommandTime = 0;
     hasAnnouncedSpawn = false;
     lastEmittedChatMessage = { text: '', time: 0 };
@@ -55,11 +53,36 @@ class BotInstance {
         this.isAutoEatActive = config.autoEat ?? true;
         this.isAutoAttackActive = config.autoAttack ?? false;
         this.isAiChatActive = config.isAiChatActive ?? true;
+        // Start continuous 1-second state broadcasting for this slot
+        this.startStateBroadcasting();
+    }
+    /**
+     * Cleanly destroy previous bot instance and close underlying TCP socket
+     */
+    destroyBot() {
+        if (this.bot) {
+            try {
+                this.bot.removeAllListeners();
+                const client = this.bot._client;
+                if (client) {
+                    if (typeof client.removeAllListeners === 'function') {
+                        client.removeAllListeners();
+                    }
+                    if (client.socket && typeof client.socket.destroy === 'function') {
+                        try {
+                            client.socket.destroy();
+                        }
+                        catch (e) { }
+                    }
+                }
+                this.bot.quit();
+            }
+            catch (e) { }
+            this.bot = null;
+        }
     }
     start() {
-        if (this.bot) {
-            this.stop();
-        }
+        this.destroyBot();
         // Security Validation 1: Hostname / IP (SSRF Protection)
         const allowLocal = process.env.ALLOW_LOCAL_SERVERS === 'true';
         const hostValidation = validator_1.SecurityValidator.validateServerHost(this.config.serverIp, allowLocal);
@@ -88,7 +111,6 @@ class BotInstance {
         this.status = 'connecting';
         this.isExplicitlyStopped = false;
         this.cancelRetryTimer();
-        this.lastPacketTime = Date.now();
         this.broadcastState();
         console.log(`[Bot ${this.config.username}] Connecting to ${hostValidation.sanitized}:${portValidation.sanitized}...`);
         this.emitChatMessage(`Connecting to ${this.config.serverIp}:${this.config.serverPort}...`, undefined, true);
@@ -123,15 +145,18 @@ class BotInstance {
                             : (err?.message || 'Socket error');
                     this.handleAutoReconnect(reason);
                 });
+                client.on('end', () => {
+                    this.handleAutoReconnect('Minecraft client stream ended');
+                });
                 client.on('connect_allowed', () => {
                     if (client.socket && client.socket.on) {
                         client.socket.on('error', (err) => {
                             console.error(`[Bot ${this.config.username} TCP Error Caught]:`, err?.message);
                         });
+                        client.socket.on('close', () => {
+                            this.handleAutoReconnect('TCP socket closed');
+                        });
                     }
-                });
-                client.on('packet', () => {
-                    this.lastPacketTime = Date.now();
                 });
             };
             if (this.bot?._client) {
@@ -290,11 +315,10 @@ class BotInstance {
                         bannedFood: ['rotten_flesh', 'spider_eye', 'poisonous_potato', 'pufferfish'],
                     };
                 }
-                // Start automation and health loops
+                // Start automation and state broadcasting loops
                 this.startAntiAfk();
                 this.startAutoAttack();
                 this.startStateBroadcasting();
-                this.startConnectionHealthWatchdog();
                 // Broadcast initial states & hook inventory updates
                 if (this.bot && this.bot.inventory?.on) {
                     this.bot.inventory.on('updateSlot', () => {
@@ -401,22 +425,27 @@ class BotInstance {
             if (isPermanent) {
                 console.warn(`[Bot ${this.config.username}] Server issued ban/whitelist kick. Auto-reconnect permanently disabled.`);
                 this.status = 'error';
+                this.uptimeStart = 0;
                 this.errorMessage = `Banned or not whitelisted: ${reasonStr}`;
                 this.isExplicitlyStopped = true;
                 this.cancelRetryTimer();
                 this.broadcastState();
                 this.io.to(this.userId).emit('bot-error', { slotId: this.userId, error: `Kicked: ${reasonStr}` });
+                this.destroyBot();
                 this.cleanup();
                 return;
             }
+            this.uptimeStart = 0;
             this.handleAutoReconnect(`Kicked: ${reasonStr}`);
         });
         this.bot.on('end', (reason) => {
             console.log(`[Bot ${this.config.username}] Connection ended:`, reason);
+            this.uptimeStart = 0;
             this.handleAutoReconnect(`Disconnected from server (${reason || 'server closed'})`);
         });
         this.bot.on('error', (err) => {
             console.error(`[Bot ${this.config.username}] Error:`, err);
+            this.uptimeStart = 0;
             const isTimeout = err?.code === 'ETIMEDOUT' || err?.message?.includes('ETIMEDOUT');
             const isConnReset = err?.code === 'ECONNRESET' || err?.message?.includes('ECONNRESET');
             const humanError = isTimeout
@@ -1152,24 +1181,6 @@ class BotInstance {
         this.io.to(this.userId).emit('timer-update', { slotId: this.userId, remainingSeconds });
     }
     /**
-     * Half-Open TCP Socket Watchdog
-     * Detects silent connection drops / zombie TCP sockets
-     */
-    startConnectionHealthWatchdog() {
-        if (this.connectionHealthInterval)
-            clearInterval(this.connectionHealthInterval);
-        this.connectionHealthInterval = setInterval(() => {
-            if (this.status !== 'online' || !this.bot)
-                return;
-            const timeSinceLastPacket = Date.now() - this.lastPacketTime;
-            // If 90 seconds have passed without a single packet from the server, connection is dead
-            if (timeSinceLastPacket > 90000) {
-                console.warn(`[Bot ${this.config.username}] Half-open connection detected (no packets for 90s). Cleanly disconnecting...`);
-                this.stop();
-            }
-        }, 30000);
-    }
-    /**
      * Inventory Interactions with Slot Boundary Protection
      */
     tossItem(slot, count) {
@@ -1361,7 +1372,8 @@ class BotInstance {
         }
     }
     getState() {
-        const uptimeSeconds = this.uptimeStart > 0
+        const isOnline = this.status === 'online';
+        const uptimeSeconds = (isOnline && this.uptimeStart > 0)
             ? Math.floor((Date.now() - this.uptimeStart) / 1000)
             : 0;
         return {
@@ -1370,25 +1382,25 @@ class BotInstance {
             username: this.config.username,
             serverIp: this.config.serverIp,
             serverPort: this.config.serverPort,
-            health: this.bot?.health ?? 20,
-            food: this.bot?.food ?? 20,
-            xpLevel: this.bot?.experience?.level ?? 0,
-            xpProgress: this.bot?.experience?.progress ?? 0,
-            dimension: this.bot?.game?.dimension ?? 'minecraft:overworld',
-            position: this.bot?.entity?.position
+            health: isOnline ? (this.bot?.health ?? 20) : 20,
+            food: isOnline ? (this.bot?.food ?? 20) : 20,
+            xpLevel: isOnline ? (this.bot?.experience?.level ?? 0) : 0,
+            xpProgress: isOnline ? (this.bot?.experience?.progress ?? 0) : 0,
+            dimension: isOnline ? (this.bot?.game?.dimension ?? 'minecraft:overworld') : 'minecraft:overworld',
+            position: (isOnline && this.bot?.entity?.position)
                 ? {
-                    x: this.bot.entity.position.x,
-                    y: this.bot.entity.position.y,
-                    z: this.bot.entity.position.z,
+                    x: Math.round(this.bot.entity.position.x * 10) / 10,
+                    y: Math.round(this.bot.entity.position.y * 10) / 10,
+                    z: Math.round(this.bot.entity.position.z * 10) / 10,
                 }
                 : { x: 0, y: 64, z: 0 },
-            ping: this.bot?.player?.ping ?? 0,
+            ping: isOnline ? (this.bot?.player?.ping ?? 0) : 0,
             uptimeSeconds,
             error: this.errorMessage,
             ownerIgn: this.config.ownerIgn,
             isAiChatActive: this.isAiChatActive,
-            isSleeping: Boolean(this.bot?.isSleeping),
-            retryInfo: this.retryTimer ? {
+            isSleeping: isOnline ? Boolean(this.bot?.isSleeping) : false,
+            retryInfo: (this.status === 'connecting' && this.retryTimer && this.nextRetryAt > 0) ? {
                 attempt: this.retryCount,
                 maxAttempts: this.maxRetries,
                 nextRetryAt: this.nextRetryAt,
@@ -1403,6 +1415,8 @@ class BotInstance {
      * Handle Disconnection & Offline Server Reconnection with Exponential Backoff
      */
     handleAutoReconnect(reason) {
+        this.uptimeStart = 0;
+        this.destroyBot();
         this.cleanup();
         if (this.isExplicitlyStopped) {
             this.status = 'offline';
@@ -1411,6 +1425,8 @@ class BotInstance {
         }
         // Avoid duplicate re-entry if a retry timer is already pending
         if (this.retryTimer) {
+            this.status = 'connecting';
+            this.broadcastState();
             return;
         }
         // Exponential Backoff Intervals: 5s, 15s, 30s, 60s, 120s
@@ -1483,19 +1499,14 @@ class BotInstance {
         this.retryCount = 0;
         this.nextRetryAt = 0;
         this.status = 'offline';
+        this.uptimeStart = 0;
+        this.destroyBot();
         this.cleanup();
-        if (this.bot) {
-            try {
-                this.bot.removeAllListeners();
-                if (this.bot._client) {
-                    this.bot._client.removeAllListeners();
-                }
-                this.bot.quit();
-            }
-            catch (e) { }
-            this.bot = null;
-        }
         this.broadcastState();
+        if (this.stateBroadcastInterval) {
+            clearInterval(this.stateBroadcastInterval);
+            this.stateBroadcastInterval = null;
+        }
     }
     cleanup() {
         if (this.antiAfkInterval) {
@@ -1505,14 +1516,6 @@ class BotInstance {
         if (this.autoAttackInterval) {
             clearInterval(this.autoAttackInterval);
             this.autoAttackInterval = null;
-        }
-        if (this.stateBroadcastInterval) {
-            clearInterval(this.stateBroadcastInterval);
-            this.stateBroadcastInterval = null;
-        }
-        if (this.connectionHealthInterval) {
-            clearInterval(this.connectionHealthInterval);
-            this.connectionHealthInterval = null;
         }
         this.cancelDisconnectTimer();
         this.trackedDoors.clear();
