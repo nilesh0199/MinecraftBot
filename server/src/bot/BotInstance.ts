@@ -105,6 +105,14 @@ export class BotInstance {
   public start() {
     this.destroyBot();
 
+    // Universal host and port normalization (handles host:port, prefixes, trailing slashes)
+    const { host: cleanedHost, port: cleanedPort } = SecurityValidator.cleanServerAddressAndPort(
+      this.config.serverIp,
+      this.config.serverPort
+    );
+    this.config.serverIp = cleanedHost;
+    this.config.serverPort = cleanedPort;
+
     // Security Validation 1: Hostname / IP (SSRF Protection)
     const allowLocal = process.env.ALLOW_LOCAL_SERVERS === 'true';
     const hostValidation = SecurityValidator.validateServerHost(this.config.serverIp, allowLocal);
@@ -152,8 +160,8 @@ export class BotInstance {
         hideErrors: false,
       };
 
-      // Version: Use explicitly selected version if provided and not 'auto'
-      if (this.config.version && this.config.version !== 'auto') {
+      // Version: Use explicitly selected version if provided and not 'auto' or '1.21.11'
+      if (this.config.version && this.config.version !== 'auto' && this.config.version !== '1.21.11') {
         botOpts.version = this.config.version;
       }
 
@@ -532,6 +540,13 @@ export class BotInstance {
         reasonStr = 'Disconnected by server (Connection rejected or session ended)';
       }
       console.log(`[Bot ${this.config.username}] Kicked from server: ${reasonStr}`);
+
+      // Auto-detect version mismatch from kick message to self-heal on next reconnect
+      const versionMatch = reasonStr.match(/(?:use|on|version)\s*(1\.\d+(?:\.\d+)?)/i);
+      if (versionMatch && versionMatch[1]) {
+        console.log(`[Bot ${this.config.username}] Detected server version from kick: ${versionMatch[1]}. Auto-adapting version.`);
+        this.config.version = versionMatch[1];
+      }
 
       // Check if kick is permanent ban or whitelist rejection
       const isPermanent = SecurityValidator.isBanOrPermanentKick(reasonStr);

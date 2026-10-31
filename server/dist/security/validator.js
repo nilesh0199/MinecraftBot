@@ -51,6 +51,38 @@ const PERMANENT_KICK_KEYWORDS = [
 ];
 class SecurityValidator {
     /**
+     * Universal Server Address & Port parser and normalizer.
+     * Gracefully handles:
+     * - "choducid-7caj.aternos.me:16808" -> host: "choducid-7caj.aternos.me", port: 16808
+     * - "http://mc.hypixel.net/" -> host: "mc.hypixel.net", port: 25565
+     * - "tcp://play.myserver.org:25566" -> host: "play.myserver.org", port: 25566
+     */
+    static cleanServerAddressAndPort(rawHost, rawPort) {
+        let host = (rawHost || '').trim();
+        // Strip protocol prefixes if present (e.g. http://, https://, tcp://)
+        host = host.replace(/^[a-zA-Z]+:\/\//, '');
+        // Strip any trailing slash or URL path
+        host = host.replace(/\/.*$/, '').trim();
+        let port = 25565;
+        if (rawPort !== undefined && rawPort !== null && String(rawPort).trim() !== '') {
+            const p = parseInt(String(rawPort).trim(), 10);
+            if (!isNaN(p) && p > 0 && p <= 65535) {
+                port = p;
+            }
+        }
+        // If host contains colon (e.g. "choducid-7caj.aternos.me:16808")
+        if (host.includes(':')) {
+            const lastColonIdx = host.lastIndexOf(':');
+            const candidateHost = host.substring(0, lastColonIdx).replace(/^\[|\]$/g, '').trim();
+            const candidatePort = parseInt(host.substring(lastColonIdx + 1).trim(), 10);
+            if (!isNaN(candidatePort) && candidatePort > 0 && candidatePort <= 65535) {
+                port = candidatePort;
+                host = candidateHost;
+            }
+        }
+        return { host: host.toLowerCase(), port };
+    }
+    /**
      * Validate Minecraft Server Hostname / IP (SSRF protection)
      */
     static validateServerHost(host, allowLocal = false) {

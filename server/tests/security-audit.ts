@@ -270,6 +270,23 @@ assert('Session token 2 successfully verified', SessionAuth.verifySessionToken(t
 assert('Cross-verifying swapped signature fails', SessionAuth.verifySessionToken(testToken1.split('.')[0] + '.' + testToken2.split('.')[1]) === null);
 
 // ==========================================
+// 13. SERVER HOST & PORT NORMALIZATION
+// ==========================================
+console.log('\n--- TEST GROUP 13: Server Host & Port Normalization ---');
+
+const parsedAternos = SecurityValidator.cleanServerAddressAndPort('ChoduCID-7CAj.aternos.me:16808');
+assert('Inline port in host extracted: 16808', parsedAternos.host === 'choducid-7caj.aternos.me' && parsedAternos.port === 16808);
+
+const parsedHttp = SecurityValidator.cleanServerAddressAndPort('http://play.hypixel.net/');
+assert('Protocol prefix and trailing slash stripped', parsedHttp.host === 'play.hypixel.net' && parsedHttp.port === 25565);
+
+const parsedTcp = SecurityValidator.cleanServerAddressAndPort('tcp://mc.example.com:25566');
+assert('tcp prefix and inline port extracted: 25566', parsedTcp.host === 'mc.example.com' && parsedTcp.port === 25566);
+
+const parsedSeparate = SecurityValidator.cleanServerAddressAndPort('mc.myserver.org', 19132);
+assert('Separate port parameter respected', parsedSeparate.host === 'mc.myserver.org' && parsedSeparate.port === 19132);
+
+// ==========================================
 // SUMMARY
 // ==========================================
 console.log('\n====================================================');

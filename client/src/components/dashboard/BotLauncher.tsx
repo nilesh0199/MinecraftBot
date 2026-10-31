@@ -44,7 +44,7 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
     : '';
   const [serverAddress, setServerAddress] = useState(initialAddress);
   const [authPassword, setAuthPassword] = useState('');
-  const [version, setVersion] = useState('1.21.11');
+  const [version, setVersion] = useState('auto');
   const [autoEat, setAutoEat] = useState(true);
   const [antiAfk, setAntiAfk] = useState(true);
   const [autoAttack, setAutoAttack] = useState(false);
@@ -99,16 +99,18 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
       return;
     }
 
-    // Parse host and port
-    let host = serverAddress.trim();
+    // Clean and parse host and port
+    let raw = serverAddress.trim().replace(/^[a-zA-Z]+:\/\//, '').replace(/\/.*$/, '').trim();
+    let host = raw;
     let port = 25565;
 
-    if (host.includes(':')) {
-      const parts = host.split(':');
-      host = parts[0];
-      const parsedPort = parseInt(parts[1], 10);
-      if (!isNaN(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
-        port = parsedPort;
+    if (raw.includes(':')) {
+      const lastColon = raw.lastIndexOf(':');
+      const candidateHost = raw.substring(0, lastColon).replace(/^\[|\]$/g, '').trim();
+      const candidatePort = parseInt(raw.substring(lastColon + 1).trim(), 10);
+      if (!isNaN(candidatePort) && candidatePort > 0 && candidatePort <= 65535) {
+        host = candidateHost;
+        port = candidatePort;
       }
     }
 
@@ -119,7 +121,7 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
         serverIp: host,
         serverPort: port,
         authPassword: authPassword.trim() || undefined,
-        version: version === 'auto' ? undefined : version,
+        version: (version && version !== 'auto' && version !== '1.21.11') ? version : undefined,
         autoEat,
         antiAfk,
         autoAttack,
@@ -308,11 +310,11 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
             onChange={(e) => setVersion(e.target.value)}
             className="w-full bg-[#121318] border border-mc-border px-3 py-2 text-xs text-slate-200 rounded focus:border-mc-green focus:outline-none font-mono cursor-pointer"
           >
-            <option value="1.21.11">1.21.11 (Protocol 774)</option>
-            <option value="auto">Auto-Negotiate (Auto-Detect)</option>
-            <option value="1.21.4">1.21.4</option>
+            <option value="auto">⚡ Auto-Negotiate (Auto-Detect Server Version)</option>
+            <option value="1.21.4">1.21.4 (Latest Vanilla / Paper)</option>
             <option value="1.21.3">1.21.3</option>
-            <option value="1.21.1">1.21.1</option>
+            <option value="1.21.1">1.21.1 (Standard 1.21)</option>
+            <option value="1.21">1.21 (Tricky Trials)</option>
             <option value="1.20.6">1.20.6</option>
             <option value="1.20.4">1.20.4</option>
             <option value="1.20.2">1.20.2</option>

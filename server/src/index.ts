@@ -214,12 +214,17 @@ io.on('connection', (socket) => {
   // Event: Spawn / Start Bot with validation
   socket.on('start-bot', (data) => {
     const slotId = getSlot(data);
+    const { host, port } = SecurityValidator.cleanServerAddressAndPort(data.serverIp, data.serverPort);
+    const cleanedVersion = (data.version && data.version !== 'auto' && data.version !== '1.21.11')
+      ? data.version
+      : undefined;
+
     const config = {
       username: data.username,
-      serverIp: data.serverIp,
-      serverPort: data.serverPort,
+      serverIp: host,
+      serverPort: port,
       authPassword: data.authPassword,
-      version: data.version,
+      version: cleanedVersion,
       ownerIgn: data.ownerIgn || 'Player',
       autoEat: data.autoEat,
       antiAfk: data.antiAfk,
