@@ -92,7 +92,7 @@ export class GroqChatService {
       console.warn('[Groq AI] Model auto-discovery failed, using default candidate list:', e?.message);
     }
 
-    this.activeModel = 'llama-3.3-70b-versatile';
+    this.activeModel = 'openai/gpt-oss-120b';
     return this.activeModel;
   }
 
@@ -154,28 +154,34 @@ RULES:
       // Assemble prioritized models to try in case of 404/400/model_not_found
       const preferredModel = await this.resolveActiveModel(apiKey);
       const candidates = Array.from(new Set([
-        preferredModel,
         'openai/gpt-oss-120b',
-        'openai/gpt-oss-20b',
+        preferredModel,
         'llama-3.3-70b-versatile',
         'llama-3.1-8b-instant',
-        'llama3-8b-8192',
-        'llama3-70b-8192',
+        'openai/gpt-oss-20b',
+        'mixtral-8x7b-32768',
       ]));
 
       let lastErrorStatus = 0;
       let rawReply: string | null = null;
 
       for (const modelToTry of candidates) {
+        const isReasoningModel = modelToTry.includes('oss') || modelToTry.includes('r1') || modelToTry.includes('o1');
+        const tokenLimit = isReasoningModel ? 1024 : 120;
+
         // Try max_completion_tokens (modern Groq standard) first, fallback to max_tokens if needed
         for (const tokenParam of ['max_completion_tokens', 'max_tokens'] as const) {
           try {
             const bodyPayload: any = {
               model: modelToTry,
               messages,
-              temperature: 0.7,
             };
-            bodyPayload[tokenParam] = 80;
+            if (!isReasoningModel) {
+              bodyPayload.temperature = 0.7;
+            } else {
+              bodyPayload.reasoning_effort = 'low';
+            }
+            bodyPayload[tokenParam] = tokenLimit;
 
             const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
               method: 'POST',
@@ -188,7 +194,7 @@ RULES:
 
             if (response.ok) {
               const data: any = await response.json();
-              rawReply = data?.choices?.[0]?.message?.content;
+              rawReply = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.message?.reasoning_content;
               if (rawReply) {
                 this.activeModel = modelToTry;
                 break;

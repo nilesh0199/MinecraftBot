@@ -1059,7 +1059,7 @@ export class BotInstance {
       } catch (e) {}
     }
 
-    if (!joke || joke.startsWith('[AI Notice]')) {
+    if (!joke || joke.startsWith('[AI') || joke.toLowerCase().includes('error') || joke.toLowerCase().includes('unavailable')) {
       joke = fallbackJokes[Math.floor(Math.random() * fallbackJokes.length)];
     }
 
@@ -1791,13 +1791,24 @@ export class BotInstance {
   private async replyWithAi(sender: string, question: string) {
     if (!this.bot || this.status !== 'online') return;
     try {
-      const reply = await this.groqService.generateReply({
+      let reply = await this.groqService.generateReply({
         sender,
         message: question,
         botUsername: this.config.username,
         ownerIgn: this.config.ownerIgn,
         customApiKey: this.config.groqApiKey,
       });
+
+      // If AI failed or returned error, gracefully fall back to friendly player dialogue instead of printing error codes
+      if (!reply || reply.startsWith('[AI Error]') || reply.includes('unavailable')) {
+        const fallbackGreetings = [
+          `Hey ${sender}! Ready when you are.`,
+          `Hello ${sender}! Type !help to see what I can do.`,
+          `What's up ${sender}! Let's go mining.`,
+          `Hey! Protecting the base 24/7.`,
+        ];
+        reply = fallbackGreetings[Math.floor(Math.random() * fallbackGreetings.length)];
+      }
 
       if (reply && this.bot && this.status === 'online') {
         this.bot.chat(reply);
