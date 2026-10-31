@@ -474,23 +474,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     if (status === 'online') {
       return (
-        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-600/60 shadow-sm">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-500/80 shadow-sm">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           ONLINE
         </span>
       );
     }
     if (status === 'connecting') {
       return (
-        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-950/80 text-amber-300 border border-amber-600/60">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+        <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-amber-950 text-amber-300 border border-amber-500/80">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
           CONNECTING
         </span>
       );
     }
     return (
-      <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono text-slate-400 bg-slate-900 border border-slate-700/60">
-        <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono text-slate-400 bg-slate-900 border border-slate-700">
+        <span className="w-2 h-2 rounded-full bg-slate-500" />
         OFFLINE
       </span>
     );
@@ -523,25 +523,39 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
             </div>
 
-            {/* TWO SIMULTANEOUS BOT TABS */}
-            <div className="flex items-center bg-[#0a0b0e] p-1 rounded-lg border border-mc-border gap-1 shadow-inner">
+            {/* TWO LARGE HIGH-VISIBILITY SIMULTANEOUS BOT TABS */}
+            <div className="flex items-center bg-[#090a0e] p-1.5 rounded-xl border-2 border-mc-border gap-2 shadow-2xl">
               {/* Tab: Bot 1 */}
               <button
                 onClick={() => {
                   sounds.playClick();
                   setActiveSlot('bot_1');
                 }}
-                className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md transition-all cursor-pointer font-sans text-xs font-semibold ${
+                className={`relative flex items-center gap-3 px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg transition-all cursor-pointer font-sans ${
                   activeSlot === 'bot_1'
-                    ? 'bg-[#1e2029] text-white border border-cyan-500/50 shadow-sm ring-1 ring-cyan-500/20'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-[#15161d] border border-transparent'
+                    ? 'bg-gradient-to-r from-cyan-950/90 via-[#192231] to-[#141d2b] text-white border-2 border-cyan-400 shadow-lg shadow-cyan-950/60 ring-2 ring-cyan-400/30'
+                    : 'bg-[#12141c]/80 text-slate-400 hover:text-slate-100 hover:bg-[#181a24] border-2 border-slate-800 hover:border-slate-700'
                 }`}
               >
-                <BotIcon className={`w-3.5 h-3.5 ${activeSlot === 'bot_1' ? 'text-cyan-400' : 'text-slate-500'}`} />
-                <span className="font-medium tracking-wide">
-                  Bot 1: <strong className="text-white">{slots.bot_1.botState.username || 'Bot 1'}</strong>
-                </span>
-                {renderTabBadge('bot_1')}
+                <div className={`p-1.5 rounded-md border ${activeSlot === 'bot_1' ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-300' : 'bg-slate-800/60 border-slate-700 text-slate-500'}`}>
+                  <BotIcon className="w-5 h-5" />
+                </div>
+                <div className="text-left">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-pixel uppercase tracking-wider text-slate-400">Slot 1</span>
+                    {activeSlot === 'bot_1' && (
+                      <span className="text-[9px] font-mono font-bold bg-cyan-400 text-black px-1.5 py-0.2 rounded font-black tracking-wider">
+                        ACTIVE TAB
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm sm:text-base font-bold text-white tracking-tight flex items-center gap-2">
+                    <span>{slots.bot_1.botState.username || 'Bot 1'}</span>
+                  </div>
+                </div>
+                <div className="ml-1 sm:ml-2">
+                  {renderTabBadge('bot_1')}
+                </div>
               </button>
 
               {/* Tab: Bot 2 */}
@@ -550,17 +564,31 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   sounds.playClick();
                   setActiveSlot('bot_2');
                 }}
-                className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md transition-all cursor-pointer font-sans text-xs font-semibold ${
+                className={`relative flex items-center gap-3 px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg transition-all cursor-pointer font-sans ${
                   activeSlot === 'bot_2'
-                    ? 'bg-[#1e2029] text-white border border-cyan-500/50 shadow-sm ring-1 ring-cyan-500/20'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-[#15161d] border border-transparent'
+                    ? 'bg-gradient-to-r from-cyan-950/90 via-[#192231] to-[#141d2b] text-white border-2 border-cyan-400 shadow-lg shadow-cyan-950/60 ring-2 ring-cyan-400/30'
+                    : 'bg-[#12141c]/80 text-slate-400 hover:text-slate-100 hover:bg-[#181a24] border-2 border-slate-800 hover:border-slate-700'
                 }`}
               >
-                <BotIcon className={`w-3.5 h-3.5 ${activeSlot === 'bot_2' ? 'text-cyan-400' : 'text-slate-500'}`} />
-                <span className="font-medium tracking-wide">
-                  Bot 2: <strong className="text-white">{slots.bot_2.botState.username || 'Bot 2'}</strong>
-                </span>
-                {renderTabBadge('bot_2')}
+                <div className={`p-1.5 rounded-md border ${activeSlot === 'bot_2' ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-300' : 'bg-slate-800/60 border-slate-700 text-slate-500'}`}>
+                  <BotIcon className="w-5 h-5" />
+                </div>
+                <div className="text-left">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-pixel uppercase tracking-wider text-slate-400">Slot 2</span>
+                    {activeSlot === 'bot_2' && (
+                      <span className="text-[9px] font-mono font-bold bg-cyan-400 text-black px-1.5 py-0.2 rounded font-black tracking-wider">
+                        ACTIVE TAB
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm sm:text-base font-bold text-white tracking-tight flex items-center gap-2">
+                    <span>{slots.bot_2.botState.username || 'Bot 2'}</span>
+                  </div>
+                </div>
+                <div className="ml-1 sm:ml-2">
+                  {renderTabBadge('bot_2')}
+                </div>
               </button>
             </div>
           </div>
