@@ -101,17 +101,13 @@ class BotInstance {
                 checkTimeoutInterval: 45000, // 45s ping timeout
                 hideErrors: false,
             };
-            // Version optimization:
-            // If explicit version provided and not 'auto', use it.
-            // If auto or omitted for Aternos servers, bind directly to '1.21.11' to skip hanging mc.ping queries and connect in under 2 seconds!
-            let resolvedVersion = this.config.version && this.config.version !== 'auto' ? this.config.version : undefined;
-            if (!resolvedVersion && hostValidation.sanitized?.includes('aternos')) {
-                resolvedVersion = '1.21.11';
-            }
-            if (resolvedVersion) {
-                botOpts.version = resolvedVersion;
+            // Version: Use explicitly selected version if provided and not 'auto'
+            if (this.config.version && this.config.version !== 'auto') {
+                botOpts.version = this.config.version;
             }
             this.bot = mineflayer_1.default.createBot(botOpts);
+            // Attach core listeners immediately so errors/kicks during connection are always handled
+            this.setupListeners();
             // Defensive: Catch low-level client socket errors (e.g. ECONNRESET, broken pipes, ETIMEDOUT)
             const attachClientListeners = (client) => {
                 if (!client || !client.on)
@@ -147,7 +143,6 @@ class BotInstance {
             // Load plugins
             this.bot.loadPlugin(mineflayer_pathfinder_1.pathfinder);
             this.bot.loadPlugin(mineflayer_auto_eat_1.plugin);
-            this.setupListeners();
         }
         catch (err) {
             this.failFast(err?.message || 'Failed to initialize Minecraft client.');
@@ -379,8 +374,28 @@ class BotInstance {
         });
         // Error & Disconnection Handling
         this.bot.on('kicked', (reason) => {
-            const reasonStr = typeof reason === 'string' ? reason : JSON.stringify(reason);
-            console.log(`[Bot ${this.config.username}] Kicked from server:`, reasonStr);
+            let reasonStr = '';
+            if (typeof reason === 'string') {
+                reasonStr = reason;
+            }
+            else if (reason && typeof reason === 'object') {
+                if (reason.extra && Array.isArray(reason.extra)) {
+                    reasonStr = reason.extra.map((e) => (typeof e === 'object' ? (e.text || '') : String(e))).join('').trim();
+                }
+                if (!reasonStr && reason.text) {
+                    reasonStr = reason.text;
+                }
+                if (!reasonStr && reason.translate) {
+                    reasonStr = reason.translate;
+                }
+                if (!reasonStr) {
+                    reasonStr = JSON.stringify(reason);
+                }
+            }
+            if (!reasonStr || reasonStr === '{"text":""}' || reasonStr === '{}') {
+                reasonStr = 'Disconnected by server (Connection rejected or session ended)';
+            }
+            console.log(`[Bot ${this.config.username}] Kicked from server: ${reasonStr}`);
             // Check if kick is permanent ban or whitelist rejection
             const isPermanent = validator_1.SecurityValidator.isBanOrPermanentKick(reasonStr);
             if (isPermanent) {

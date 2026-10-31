@@ -139,8 +139,8 @@ app.get('/health', (req, res) => {
 
 // Diagnostic endpoint to test direct TCP connectivity from cloud host
 app.get('/api/test-connect', (req, res) => {
-  const host = (req.query.host as string) || 'ChoduCID-7CAj.aternos.me';
-  const port = parseInt((req.query.port as string) || '16808', 10);
+  const host = (req.query.host as string) || 'play.hypixel.net';
+  const port = parseInt((req.query.port as string) || '25565', 10);
 
   const hostVal = SecurityValidator.validateServerHost(host);
   if (!hostVal.valid || !hostVal.sanitized) {

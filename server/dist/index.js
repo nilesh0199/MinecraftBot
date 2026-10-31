@@ -122,8 +122,8 @@ app.get('/health', (req, res) => {
 });
 // Diagnostic endpoint to test direct TCP connectivity from cloud host
 app.get('/api/test-connect', (req, res) => {
-    const host = req.query.host || 'ChoduCID-7CAj.aternos.me';
-    const port = parseInt(req.query.port || '16808', 10);
+    const host = req.query.host || 'play.hypixel.net';
+    const port = parseInt(req.query.port || '25565', 10);
     const hostVal = validator_1.SecurityValidator.validateServerHost(host);
     if (!hostVal.valid || !hostVal.sanitized) {
         return res.status(400).json({ error: hostVal.error });

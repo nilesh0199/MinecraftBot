@@ -270,7 +270,7 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
               type="text"
               value={serverAddress}
               onChange={(e) => setServerAddress(e.target.value)}
-              placeholder="e.g. server.aternos.me:16808 or mc.example.com"
+              placeholder="e.g. play.example.com or mc.myserver.net:25565"
               className="w-full bg-[#121318] border border-mc-border px-3 py-2 text-sm text-mc-diamond rounded focus:border-mc-diamond focus:outline-none font-mono"
             />
             <Server className="w-4 h-4 text-slate-500 absolute right-3 top-2.5 pointer-events-none" />
@@ -308,7 +308,7 @@ export const BotLauncher: React.FC<BotLauncherProps> = ({
             onChange={(e) => setVersion(e.target.value)}
             className="w-full bg-[#121318] border border-mc-border px-3 py-2 text-xs text-slate-200 rounded focus:border-mc-green focus:outline-none font-mono cursor-pointer"
           >
-            <option value="1.21.11">1.21.11 (Recommended - Aternos & Protocol 774)</option>
+            <option value="1.21.11">1.21.11 (Protocol 774)</option>
             <option value="auto">Auto-Negotiate (Auto-Detect)</option>
             <option value="1.21.4">1.21.4</option>
             <option value="1.21.3">1.21.3</option>
