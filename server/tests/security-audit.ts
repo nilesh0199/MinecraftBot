@@ -275,7 +275,7 @@ assert('Cross-verifying swapped signature fails', SessionAuth.verifySessionToken
 console.log('\n--- TEST GROUP 13: Server Host & Port Normalization ---');
 
 const parsedAternos = SecurityValidator.cleanServerAddressAndPort('ChoduCID-7CAj.aternos.me:16808');
-assert('Inline port in host extracted: 16808', parsedAternos.host === 'choducid-7caj.aternos.me' && parsedAternos.port === 16808);
+assert('Inline port in host extracted and casing preserved: 16808', parsedAternos.host === 'ChoduCID-7CAj.aternos.me' && parsedAternos.port === 16808);
 
 const parsedHttp = SecurityValidator.cleanServerAddressAndPort('http://play.hypixel.net/');
 assert('Protocol prefix and trailing slash stripped', parsedHttp.host === 'play.hypixel.net' && parsedHttp.port === 25565);

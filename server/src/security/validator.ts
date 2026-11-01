@@ -91,7 +91,7 @@ export class SecurityValidator {
       }
     }
 
-    return { host: host.toLowerCase(), port };
+    return { host, port };
   }
 
   /**
@@ -102,7 +102,7 @@ export class SecurityValidator {
       return { valid: false, error: 'Server host is required.' };
     }
 
-    const trimmed = host.trim().toLowerCase();
+    const trimmed = host.trim();
 
     // Check length
     if (trimmed.length > 255 || trimmed.length < 1) {
@@ -117,8 +117,9 @@ export class SecurityValidator {
 
     // If local connections are forbidden, verify host is not in blocked IP/hostname patterns
     if (!allowLocal) {
+      const lower = trimmed.toLowerCase();
       for (const pattern of BLOCKED_IP_PATTERNS) {
-        if (pattern.test(trimmed)) {
+        if (pattern.test(lower)) {
           return {
             valid: false,
             error: 'Connection to internal, loopback, or cloud metadata addresses is forbidden.',

@@ -80,7 +80,7 @@ class SecurityValidator {
                 host = candidateHost;
             }
         }
-        return { host: host.toLowerCase(), port };
+        return { host, port };
     }
     /**
      * Validate Minecraft Server Hostname / IP (SSRF protection)
@@ -89,7 +89,7 @@ class SecurityValidator {
         if (!host || typeof host !== 'string') {
             return { valid: false, error: 'Server host is required.' };
         }
-        const trimmed = host.trim().toLowerCase();
+        const trimmed = host.trim();
         // Check length
         if (trimmed.length > 255 || trimmed.length < 1) {
             return { valid: false, error: 'Host length must be between 1 and 255 characters.' };
@@ -101,8 +101,9 @@ class SecurityValidator {
         }
         // If local connections are forbidden, verify host is not in blocked IP/hostname patterns
         if (!allowLocal) {
+            const lower = trimmed.toLowerCase();
             for (const pattern of BLOCKED_IP_PATTERNS) {
-                if (pattern.test(trimmed)) {
+                if (pattern.test(lower)) {
                     return {
                         valid: false,
                         error: 'Connection to internal, loopback, or cloud metadata addresses is forbidden.',
