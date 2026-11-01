@@ -1,3 +1,5 @@
+import net from 'net';
+import dns from 'dns';
 import mineflayer, { Bot } from 'mineflayer';
 import { pathfinder, Movements, goals } from 'mineflayer-pathfinder';
 import { plugin as autoEat } from 'mineflayer-auto-eat';
@@ -104,7 +106,7 @@ export class BotInstance {
     }
   }
 
-  public start() {
+  public async start() {
     this.destroyBot();
 
     // Universal host and port normalization (handles host:port, prefixes, trailing slashes)
@@ -152,6 +154,20 @@ export class BotInstance {
     console.log(`[Bot ${this.config.username}] Connecting to ${hostValidation.sanitized}:${portValidation.sanitized}...`);
     this.emitChatMessage(`Connecting to ${this.config.serverIp}:${this.config.serverPort}...`, undefined, true);
 
+    // Direct DNS Resolution: Bypass stale OS getaddrinfo cache to obtain the active Aternos German node IP
+    let targetIp: string = hostValidation.sanitized!;
+    try {
+      if (net.isIP(targetIp) === 0) {
+        const resolvedIps = await dns.promises.resolve4(targetIp);
+        if (resolvedIps && resolvedIps.length > 0) {
+          targetIp = resolvedIps[0];
+          console.log(`[Bot ${this.config.username}] Fresh DNS resolved ${hostValidation.sanitized} -> ${targetIp}`);
+        }
+      }
+    } catch (e: any) {
+      // Fallback to domain hostname if network DNS query encounters an issue
+    }
+
     try {
       const botOpts: any = {
         host: hostValidation.sanitized!,
@@ -160,13 +176,31 @@ export class BotInstance {
         auth: 'offline', // Cracked server authentication
         checkTimeoutInterval: 45000, // 45s ping timeout
         hideErrors: false,
+        connect: (client: any) => {
+          const socket = net.connect({
+            host: targetIp,
+            port: portValidation.sanitized!,
+          });
+          // 12-Second Network Connection Timeout Guard:
+          // If server IP is black-holed or unreachable, abort in 12s instead of 180s Linux hang
+          socket.setTimeout(12000);
+          socket.once('connect', () => {
+            // Once TCP network connection is made, clear connect timeout completely
+            socket.setTimeout(0);
+          });
+          socket.once('timeout', () => {
+            socket.destroy(new Error(`connect ETIMEDOUT ${hostValidation.sanitized}:${portValidation.sanitized}`));
+          });
+          client.setSocket(socket);
+        },
       };
 
-      // Version: Use explicitly selected version or default to 1.21.11 to avoid slow autoVersion pings
-      const selectedVersion = (this.config.version && this.config.version !== 'auto')
-        ? this.config.version
-        : '1.21.11';
-      botOpts.version = selectedVersion;
+      // Version: Use explicitly selected version, autoVersion if auto, or default to 1.21.11
+      if (this.config.version === 'auto') {
+        botOpts.version = false; // Triggers autoVersion in minecraft-protocol
+      } else {
+        botOpts.version = this.config.version || '1.21.11';
+      }
 
       this.bot = mineflayer.createBot(botOpts);
 

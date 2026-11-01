@@ -4,6 +4,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BotInstance = void 0;
+const net_1 = __importDefault(require("net"));
+const dns_1 = __importDefault(require("dns"));
 const mineflayer_1 = __importDefault(require("mineflayer"));
 const mineflayer_pathfinder_1 = require("mineflayer-pathfinder");
 const mineflayer_auto_eat_1 = require("mineflayer-auto-eat");
@@ -87,7 +89,7 @@ class BotInstance {
             this.bot = null;
         }
     }
-    start() {
+    async start() {
         this.destroyBot();
         // Universal host and port normalization (handles host:port, prefixes, trailing slashes)
         const { host: cleanedHost, port: cleanedPort } = validator_1.SecurityValidator.cleanServerAddressAndPort(this.config.serverIp, this.config.serverPort);
@@ -124,6 +126,20 @@ class BotInstance {
         this.broadcastState();
         console.log(`[Bot ${this.config.username}] Connecting to ${hostValidation.sanitized}:${portValidation.sanitized}...`);
         this.emitChatMessage(`Connecting to ${this.config.serverIp}:${this.config.serverPort}...`, undefined, true);
+        // Direct DNS Resolution: Bypass stale OS getaddrinfo cache to obtain the active Aternos German node IP
+        let targetIp = hostValidation.sanitized;
+        try {
+            if (net_1.default.isIP(targetIp) === 0) {
+                const resolvedIps = await dns_1.default.promises.resolve4(targetIp);
+                if (resolvedIps && resolvedIps.length > 0) {
+                    targetIp = resolvedIps[0];
+                    console.log(`[Bot ${this.config.username}] Fresh DNS resolved ${hostValidation.sanitized} -> ${targetIp}`);
+                }
+            }
+        }
+        catch (e) {
+            // Fallback to domain hostname if network DNS query encounters an issue
+        }
         try {
             const botOpts = {
                 host: hostValidation.sanitized,
@@ -132,12 +148,31 @@ class BotInstance {
                 auth: 'offline', // Cracked server authentication
                 checkTimeoutInterval: 45000, // 45s ping timeout
                 hideErrors: false,
+                connect: (client) => {
+                    const socket = net_1.default.connect({
+                        host: targetIp,
+                        port: portValidation.sanitized,
+                    });
+                    // 12-Second Network Connection Timeout Guard:
+                    // If server IP is black-holed or unreachable, abort in 12s instead of 180s Linux hang
+                    socket.setTimeout(12000);
+                    socket.once('connect', () => {
+                        // Once TCP network connection is made, clear connect timeout completely
+                        socket.setTimeout(0);
+                    });
+                    socket.once('timeout', () => {
+                        socket.destroy(new Error(`connect ETIMEDOUT ${hostValidation.sanitized}:${portValidation.sanitized}`));
+                    });
+                    client.setSocket(socket);
+                },
             };
-            // Version: Use explicitly selected version or default to 1.21.11 to avoid slow autoVersion pings
-            const selectedVersion = (this.config.version && this.config.version !== 'auto')
-                ? this.config.version
-                : '1.21.11';
-            botOpts.version = selectedVersion;
+            // Version: Use explicitly selected version, autoVersion if auto, or default to 1.21.11
+            if (this.config.version === 'auto') {
+                botOpts.version = false; // Triggers autoVersion in minecraft-protocol
+            }
+            else {
+                botOpts.version = this.config.version || '1.21.11';
+            }
             this.bot = mineflayer_1.default.createBot(botOpts);
             // Attach core listeners immediately so errors/kicks during connection are always handled
             this.setupListeners();
