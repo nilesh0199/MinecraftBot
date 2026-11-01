@@ -71,6 +71,12 @@ class BotInstance {
         if (this.bot) {
             try {
                 this.bot.removeAllListeners();
+                if (this.bot.pathfinder) {
+                    try {
+                        this.bot.pathfinder.stop();
+                    }
+                    catch (e) { }
+                }
                 const client = this.bot._client;
                 if (client) {
                     if (typeof client.removeAllListeners === 'function') {
@@ -78,6 +84,7 @@ class BotInstance {
                     }
                     if (client.socket && typeof client.socket.destroy === 'function') {
                         try {
+                            client.socket.removeAllListeners();
                             client.socket.destroy();
                         }
                         catch (e) { }
@@ -153,15 +160,27 @@ class BotInstance {
                         host: targetIp,
                         port: portValidation.sanitized,
                     });
+                    // Enable TCP KeepAlive probes at the OS layer (10s interval) to prevent cloud firewalls / NAT timeouts
+                    socket.setKeepAlive(true, 10000);
+                    if (socket.setNoDelay)
+                        socket.setNoDelay(true);
                     // 12-Second Network Connection Timeout Guard:
                     // If server IP is black-holed or unreachable, abort in 12s instead of 180s Linux hang
                     socket.setTimeout(12000);
-                    socket.once('connect', () => {
-                        // Once TCP network connection is made, clear connect timeout completely
+                    const onConnect = () => {
+                        // Once TCP network connection is made, clear connect timeout and remove listener completely
                         socket.setTimeout(0);
-                    });
-                    socket.once('timeout', () => {
+                        socket.removeListener('timeout', onTimeout);
+                    };
+                    const onTimeout = () => {
+                        socket.removeListener('connect', onConnect);
                         socket.destroy(new Error(`connect ETIMEDOUT ${hostValidation.sanitized}:${portValidation.sanitized}`));
+                    };
+                    socket.once('connect', onConnect);
+                    socket.once('timeout', onTimeout);
+                    // Defensive: Absorb raw socket errors before client attaches to avoid uncaught exceptions
+                    socket.on('error', (err) => {
+                        // Handled safely by client onFatalError once attached
                     });
                     client.setSocket(socket);
                 },
@@ -1306,34 +1325,30 @@ class BotInstance {
                 // Standard Compass Step Cycle:
                 const dir = cardinalDirections[this.afkDirectionIndex % cardinalDirections.length];
                 this.afkDirectionIndex++;
-                // 1. Face the cardinal direction
-                this.bot.look(dir.yaw, 0, true);
+                // 1. Face the cardinal direction with slight natural pitch variation
+                const slightPitch = (Math.random() - 0.5) * 0.1;
+                this.bot.look(dir.yaw, slightPitch, true);
                 // 2. Step forward 1 block (~240ms)
-                if (this.bot.entity?.onGround) {
-                    this.bot.setControlState('forward', true);
+                this.bot.setControlState('forward', true);
+                setTimeout(() => {
+                    if (!this.bot || this.isFollowing)
+                        return;
+                    this.bot.setControlState('forward', false);
+                    // 3. Pause 200ms at destination block so server records the block transition
                     setTimeout(() => {
                         if (!this.bot || this.isFollowing)
                             return;
-                        this.bot.setControlState('forward', false);
-                        // 3. Pause 200ms at destination block so server records the block transition
+                        // 4. Step backward 1 block (~240ms) to return to center
+                        this.bot.setControlState('back', true);
                         setTimeout(() => {
-                            if (!this.bot || this.isFollowing)
-                                return;
-                            // 4. Step backward 1 block (~240ms) to return to center
-                            if (this.bot.entity?.onGround) {
-                                this.bot.setControlState('back', true);
-                                setTimeout(() => {
-                                    if (this.bot) {
-                                        this.bot.setControlState('back', false);
-                                        if (Math.random() < 0.5) {
-                                            this.bot.swingArm('right');
-                                        }
-                                    }
-                                }, 240);
+                            if (this.bot) {
+                                this.bot.setControlState('back', false);
+                                // Active server keep-alive pulse: arm swing registers player interaction packet
+                                this.bot.swingArm('right');
                             }
-                        }, 200);
-                    }, 240);
-                }
+                        }, 240);
+                    }, 200);
+                }, 240);
             }
             catch (e) { }
         }, 10000);
@@ -1834,10 +1849,10 @@ class BotInstance {
      * Handle Disconnection & Offline Server Reconnection with Exponential Backoff
      */
     handleAutoReconnect(reason) {
-        this.uptimeStart = 0;
-        this.destroyBot();
-        this.cleanup();
         if (this.isExplicitlyStopped) {
+            this.uptimeStart = 0;
+            this.destroyBot();
+            this.cleanup();
             this.status = 'offline';
             this.broadcastState();
             return;
@@ -1848,8 +1863,11 @@ class BotInstance {
             this.broadcastState();
             return;
         }
+        this.uptimeStart = 0;
+        this.destroyBot();
+        this.cleanup();
         // Rapid Reconnect Intervals (beating Aternos 60-second empty server shutdown window)
-        const retryDelays = [5000, 8000, 12000, 16000, 20000];
+        const retryDelays = [3000, 6000, 10000, 15000, 20000];
         if (this.retryCount < this.maxRetries) {
             const delayMs = retryDelays[this.retryCount] || 120000;
             const seconds = Math.round(delayMs / 1000);
