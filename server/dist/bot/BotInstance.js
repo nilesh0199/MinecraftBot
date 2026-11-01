@@ -49,6 +49,8 @@ class BotInstance {
     onUsernameChanged;
     tempLeaveTimer = null;
     groqService = GroqChatService_1.GroqChatService.getInstance();
+    afkDirectionIndex = 0;
+    afkCenterPosition = null;
     constructor(userId, config, io) {
         this.userId = userId;
         this.config = config;
@@ -445,16 +447,15 @@ class BotInstance {
                 console.warn(`[Bot ${this.config.username}] Error in playerJoined greeting:`, err);
             }
         });
-        // Smart Door Handler: Automatically open closed doors and close them after passing through
+        // Smart Door Handler: Dormant when idle; checks doors only when actively following a player
         let doorTickCounter = 0;
         this.bot.on('physicTick', () => {
+            if (!this.isFollowing)
+                return;
             doorTickCounter++;
-            if (doorTickCounter % 3 === 0) {
+            if (doorTickCounter % 6 === 0) {
                 this.handleSmartDoors();
             }
-        });
-        this.bot.on('move', () => {
-            this.handleSmartDoors();
         });
         // Health & Hunger updates
         this.bot.on('health', () => {
@@ -814,11 +815,11 @@ class BotInstance {
             this.followPlayer(targetName);
             return;
         }
-        // 10. STOP / HALT (Available for everyone)
-        if (lower.startsWith('!stop') || lower.startsWith('!halt')) {
+        // 10. STOP / HALT / STAY (Available for everyone)
+        if (lower.startsWith('!stop') || lower.startsWith('!halt') || lower.startsWith('!stay') || lower.startsWith('!pause') || lower.startsWith('!afk')) {
             this.lastInGameCommandTime = now;
             this.stopFollow();
-            this.bot.chat(`Stopped following.`);
+            this.bot.chat(`Stopped following. Returned to AFK standby.`);
             return;
         }
         // 11. STATUS / INFO (Available for everyone)
@@ -1035,7 +1036,13 @@ class BotInstance {
         try {
             this.isFollowing = false;
             this.targetPlayerToFollow = null;
-            this.bot.pathfinder.setGoal(null);
+            this.bot.pathfinder?.setGoal(null);
+            this.bot.pathfinder?.stop();
+            this.bot.clearControlStates();
+            this.trackedDoors.clear();
+            if (this.bot.entity?.position) {
+                this.afkCenterPosition = this.bot.entity.position.clone();
+            }
         }
         catch (err) { }
     }
@@ -1214,75 +1221,87 @@ class BotInstance {
      * Performs realistic, diverse micro-actions to bypass Spigot/Paper/Essentials AFK detection:
      * - Natural looking rotations with force=true
      * - Micro-jumps (resets Spigot player-idle-timeout reliably)
-     * - Arm swings & sneaking toggles
-     * - Micro-nudges forward & back (resets block-change AFK detectors without falling or drifting)
+     * Anti-AFK Routine:
+     * 1-Block Directional Compass Patrol (North -> South -> East -> West)
+     * Walks forward 1 block (~240ms), pauses 200ms to register chunk/block boundary crossing,
+     * then steps back to center (~240ms).
+     * Automatically recenters if drifted >1.3 blocks from anchor, ensuring 100% safety in 3x3 rooms.
      */
     startAntiAfk() {
         if (this.antiAfkInterval)
             clearInterval(this.antiAfkInterval);
         if (!this.isAntiAfkActive)
             return;
+        if (this.bot?.entity?.position) {
+            this.afkCenterPosition = this.bot.entity.position.clone();
+        }
+        // Compass directions: North (-Z, yaw=PI), South (+Z, yaw=0), East (+X, yaw=-PI/2), West (-X, yaw=PI/2)
+        const cardinalDirections = [
+            { name: 'North', yaw: Math.PI },
+            { name: 'South', yaw: 0 },
+            { name: 'East', yaw: -Math.PI / 2 },
+            { name: 'West', yaw: Math.PI / 2 },
+        ];
         this.antiAfkInterval = setInterval(() => {
             if (!this.bot || this.status !== 'online' || this.isFollowing || this.bot.isSleeping)
                 return;
             try {
-                // 1. Natural Looking Rotation (with force=true to ensure look packet is sent)
-                const currentYaw = this.bot.entity?.yaw ?? 0;
-                const currentPitch = this.bot.entity?.pitch ?? 0;
-                const targetYaw = currentYaw + (Math.random() * 0.8 - 0.4);
-                const targetPitch = Math.max(-0.7, Math.min(0.7, currentPitch + (Math.random() * 0.4 - 0.2)));
-                this.bot.look(targetYaw, targetPitch, true);
-                // 2. Select diverse, realistic physical actions
-                const rand = Math.random();
-                if (rand < 0.35) {
-                    // Action A: Micro-jump when grounded (instantly resets Spigot/Paper idle timer)
-                    if (this.bot.entity?.onGround) {
-                        this.bot.setControlState('jump', true);
-                        setTimeout(() => {
-                            if (this.bot)
-                                this.bot.setControlState('jump', false);
-                        }, 250);
-                    }
+                if (!this.afkCenterPosition && this.bot.entity?.position) {
+                    this.afkCenterPosition = this.bot.entity.position.clone();
                 }
-                else if (rand < 0.65) {
-                    // Action B: Arm swing + Sneak toggle
-                    this.bot.swingArm('right');
-                    this.bot.setControlState('sneak', true);
-                    setTimeout(() => {
-                        if (this.bot)
-                            this.bot.setControlState('sneak', false);
-                    }, 600);
-                }
-                else if (rand < 0.85) {
-                    // Action C: Micro-nudge (step forward 120ms then step back 120ms to stay on exact spot)
+                const currentPos = this.bot.entity?.position;
+                if (!currentPos)
+                    return;
+                // Drift / Off-Center Correction:
+                // If the bot drifted > 1.3 blocks from anchor, steer back to center
+                if (this.afkCenterPosition && currentPos.distanceTo(this.afkCenterPosition) > 1.3) {
+                    const dx = this.afkCenterPosition.x - currentPos.x;
+                    const dz = this.afkCenterPosition.z - currentPos.z;
+                    const returnYaw = Math.atan2(-dx, -dz);
+                    this.bot.look(returnYaw, 0, true);
                     if (this.bot.entity?.onGround) {
                         this.bot.setControlState('forward', true);
                         setTimeout(() => {
-                            if (this.bot) {
+                            if (this.bot)
                                 this.bot.setControlState('forward', false);
+                        }, 250);
+                    }
+                    return;
+                }
+                // Standard Compass Step Cycle:
+                const dir = cardinalDirections[this.afkDirectionIndex % cardinalDirections.length];
+                this.afkDirectionIndex++;
+                // 1. Face the cardinal direction
+                this.bot.look(dir.yaw, 0, true);
+                // 2. Step forward 1 block (~240ms)
+                if (this.bot.entity?.onGround) {
+                    this.bot.setControlState('forward', true);
+                    setTimeout(() => {
+                        if (!this.bot || this.isFollowing)
+                            return;
+                        this.bot.setControlState('forward', false);
+                        // 3. Pause 200ms at destination block so server records the block transition
+                        setTimeout(() => {
+                            if (!this.bot || this.isFollowing)
+                                return;
+                            // 4. Step backward 1 block (~240ms) to return to center
+                            if (this.bot.entity?.onGround) {
                                 this.bot.setControlState('back', true);
                                 setTimeout(() => {
-                                    if (this.bot)
+                                    if (this.bot) {
                                         this.bot.setControlState('back', false);
-                                }, 120);
+                                        if (Math.random() < 0.5) {
+                                            this.bot.swingArm('right');
+                                        }
+                                    }
+                                }, 240);
                             }
-                        }, 120);
-                    }
-                }
-                else {
-                    // Action D: Arm swing + Sneak combo
-                    this.bot.swingArm('right');
-                    this.bot.setControlState('sneak', true);
-                    setTimeout(() => {
-                        if (this.bot) {
-                            this.bot.swingArm('right');
-                            this.bot.setControlState('sneak', false);
-                        }
-                    }, 700);
+                        }, 200);
+                    }, 240);
                 }
             }
             catch (e) { }
-        }, 9000);
+        }, 10000);
     }
     setAntiAfk(enabled) {
         this.isAntiAfkActive = enabled;
@@ -1686,15 +1705,20 @@ class BotInstance {
         this.io.to(this.userId).emit('inventory-update', { slotId: this.userId, items });
     }
     /**
-     * Periodic State Broadcasting
+     * Periodic State Broadcasting (Paused when no dashboard clients are connected to save CPU)
      */
     startStateBroadcasting() {
         if (this.stateBroadcastInterval)
             clearInterval(this.stateBroadcastInterval);
         this.stateBroadcastInterval = setInterval(() => {
-            this.broadcastState();
-            if (this.disconnectTimerEnd) {
-                this.broadcastTimer();
+            // Check if any browser client is connected to this bot's room
+            const room = this.io.sockets.adapter.rooms.get(this.userId);
+            const hasClients = room && room.size > 0;
+            if (hasClients) {
+                this.broadcastState();
+                if (this.disconnectTimerEnd) {
+                    this.broadcastTimer();
+                }
             }
         }, 1000);
     }
@@ -1789,8 +1813,8 @@ class BotInstance {
             this.broadcastState();
             return;
         }
-        // Exponential Backoff Intervals: 5s, 15s, 30s, 60s, 120s
-        const retryDelays = [5000, 15000, 30000, 60000, 120000];
+        // Rapid Reconnect Intervals (beating Aternos 60-second empty server shutdown window)
+        const retryDelays = [5000, 8000, 12000, 16000, 20000];
         if (this.retryCount < this.maxRetries) {
             const delayMs = retryDelays[this.retryCount] || 120000;
             const seconds = Math.round(delayMs / 1000);
