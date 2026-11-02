@@ -84,35 +84,21 @@ export class BotInstance {
   }
 
   /**
-   * Cleanly destroy previous bot instance and close underlying TCP socket
+   * Cleanly destroy previous bot instance
    */
   private destroyBot() {
     if (this.bot) {
       try {
-        // Defensive: Pre-absorb any error events fired during teardown so they never bubble to uncaughtException
-        this.bot.removeAllListeners();
-        this.bot.on('error', () => {});
-
         if (this.bot.pathfinder) {
           try {
             this.bot.pathfinder.stop();
           } catch (e) {}
         }
-        const client = (this.bot as any)._client;
-        if (client) {
-          if (typeof client.removeAllListeners === 'function') {
-            client.removeAllListeners();
-            client.on('error', () => {});
-          }
-          if (client.socket && typeof client.socket.destroy === 'function') {
-            try {
-              client.socket.removeAllListeners();
-              client.socket.on('error', () => {});
-              client.socket.destroy();
-            } catch (e) {}
-          }
-        }
-        this.bot.quit();
+        this.bot.removeAllListeners();
+        this.bot.on('error', () => {}); // Pre-absorb any error events fired during teardown
+        try {
+          this.bot.quit();
+        } catch (e) {}
       } catch (e) {}
       this.bot = null;
     }
@@ -179,70 +165,12 @@ export class BotInstance {
         version: (!this.config.version || this.config.version === 'auto')
           ? '1.21.11'
           : this.config.version,
-        checkTimeoutInterval: 25000, // 25s ping timeout (detects connection drops within 25s to beat Aternos 60s empty pause)
+        checkTimeoutInterval: 45000,
         hideErrors: false,
       };
 
       this.bot = mineflayer.createBot(botOpts);
-
-      // Attach core listeners immediately so errors/kicks during connection are always handled
       this.setupListeners();
-
-      // Enable TCP KeepAlive probes at the OS layer (10s interval) once connected
-      (this.bot as any).on('connect', () => {
-        const client = (this.bot as any)?._client;
-        if (client && client.socket) {
-          client.socket.setKeepAlive(true, 10000);
-          if (client.socket.setNoDelay) client.socket.setNoDelay(true);
-        }
-      });
-
-      // Defensive: Catch low-level client socket errors (e.g. ECONNRESET, broken pipes, ETIMEDOUT)
-      const attachClientListeners = (client: any) => {
-        if (!client || !client.on) return;
-        client.on('error', (err: any) => {
-          console.error(`[Bot ${this.config.username} Socket Error Caught]:`, err?.message);
-          const isTimeout = err?.code === 'ETIMEDOUT' || err?.message?.includes('ETIMEDOUT');
-          const isReset = err?.code === 'ECONNRESET' || err?.message?.includes('ECONNRESET');
-          const reason = isTimeout
-            ? 'Connection timed out (Server offline or unreachable)'
-            : isReset
-            ? 'Connection reset (Server offline or restarting)'
-            : (err?.message || 'Socket error');
-          this.handleAutoReconnect(reason);
-        });
-        client.on('connect_allowed', () => {
-          if (client.socket && client.socket.on) {
-            client.socket.on('error', (err: any) => {
-              console.error(`[Bot ${this.config.username} TCP Error Caught]:`, err?.message);
-            });
-          }
-        });
-
-        // 1.21+ Player Knockback & Velocity Fix:
-        // In Minecraft 1.21+, lpVec3 packets are decoded directly into float blocks/tick.
-        // Mineflayer's internal entities plugin mistakenly divides this float by 8000,
-        // reducing knockback to 0.00005 (which prismarine-physics rounds to 0).
-        // Here we restore the real knockback vector to bot.entity.velocity so player hits push the bot naturally.
-        client.on('entity_velocity', (packet: any) => {
-          if (!this.bot?.entity || packet.entityId !== this.bot.entity.id) return;
-          if (packet.velocity && typeof packet.velocity.x === 'number') {
-            const isModern = this.bot.version && (this.bot.version.startsWith('1.21') || this.bot.version.startsWith('1.22'));
-            if (isModern) {
-              this.bot.entity.velocity.set(packet.velocity.x, packet.velocity.y, packet.velocity.z);
-            }
-          }
-        });
-      };
-
-      if ((this.bot as any)?._client) {
-        attachClientListeners((this.bot as any)._client);
-      }
-      (this.bot as any).on('inject_allowed', () => {
-        attachClientListeners((this.bot as any)?._client);
-      });
-
-      // Load plugins
       this.bot.loadPlugin(pathfinder);
       this.bot.loadPlugin(autoEat);
     } catch (err: any) {
@@ -259,6 +187,20 @@ export class BotInstance {
 
   private setupListeners() {
     if (!this.bot) return;
+
+    // 1.21+ Player Knockback & Velocity Fix
+    const client = (this.bot as any)?._client;
+    if (client && client.on) {
+      client.on('entity_velocity', (packet: any) => {
+        if (!this.bot?.entity || packet.entityId !== this.bot.entity.id) return;
+        if (packet.velocity && typeof packet.velocity.x === 'number') {
+          const isModern = this.bot.version && (this.bot.version.startsWith('1.21') || this.bot.version.startsWith('1.22'));
+          if (isModern) {
+            this.bot.entity.velocity.set(packet.velocity.x, packet.velocity.y, packet.velocity.z);
+          }
+        }
+      });
+    }
 
     // 1. Modern Server Resource Pack Handler (Prevents login limbo kicks)
     this.bot.on('resourcePack' as any, (_url: string, _hash: string) => {
