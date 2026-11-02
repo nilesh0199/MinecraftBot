@@ -25,6 +25,8 @@ class BotInstance {
     disconnectTimer = null;
     disconnectTimerEnd = null;
     stateBroadcastInterval = null;
+    inGameWatchdogInterval = null;
+    lastKeepAlivePacketTime = 0;
     lastInGameCommandTime = 0;
     hasAnnouncedSpawn = false;
     spawnTime = 0;
@@ -67,6 +69,10 @@ class BotInstance {
      * Cleanly destroy previous bot instance
      */
     destroyBot() {
+        if (this.inGameWatchdogInterval) {
+            clearInterval(this.inGameWatchdogInterval);
+            this.inGameWatchdogInterval = null;
+        }
         if (this.bot) {
             try {
                 if (this.bot.pathfinder) {
@@ -136,7 +142,7 @@ class BotInstance {
                 version: (!this.config.version || this.config.version === 'auto')
                     ? '1.21.11'
                     : this.config.version,
-                checkTimeoutInterval: 120000, // 120 seconds: absorbs Aternos chunk generation & tick lag spikes
+                checkTimeoutInterval: 75000, // Phase 1: 75s protects initial chunk generation and world spawn from timing out
                 hideErrors: false,
             };
             this.bot = mineflayer_1.default.createBot(botOpts);
@@ -160,6 +166,10 @@ class BotInstance {
         // 1.21+ Player Knockback & Velocity Fix
         const client = this.bot?._client;
         if (client && client.on) {
+            // Track keepalive packets sent by Aternos for the in-game watchdog
+            client.on('keep_alive', () => {
+                this.lastKeepAlivePacketTime = Date.now();
+            });
             client.on('entity_velocity', (packet) => {
                 if (!this.bot?.entity || packet.entityId !== this.bot.entity.id)
                     return;
@@ -223,6 +233,8 @@ class BotInstance {
                 this.retryCount = 0;
                 this.reconnectStartedAt = 0;
                 this.cancelRetryTimer();
+                // Phase 2: Start in-game keep-alive watchdog (catches silent proxy disconnects in 22s to beat Aternos 60s shutdown)
+                this.startInGameWatchdog();
                 // Setup pathfinder movements with anti-cheat safe defaults & door navigation
                 if (this.bot) {
                     const defaultMove = new mineflayer_pathfinder_1.Movements(this.bot);
@@ -1668,6 +1680,37 @@ class BotInstance {
         this.io.to(this.userId).emit('inventory-update', { slotId: this.userId, items });
     }
     /**
+     * Phase 2 In-Game Keep-Alive Watchdog:
+     * Aternos sends keep_alive packets every 15-20 seconds.
+     * If the edge proxy silently drops the connection, this watchdog flags it within 22 seconds,
+     * terminates the dead socket, and triggers an 8-second teardown reconnect.
+     * Turnaround: 22s detection + 8s backoff = 30s (beats Aternos' 60s empty server shutdown).
+     */
+    startInGameWatchdog() {
+        if (this.inGameWatchdogInterval) {
+            clearInterval(this.inGameWatchdogInterval);
+        }
+        this.lastKeepAlivePacketTime = Date.now();
+        this.inGameWatchdogInterval = setInterval(() => {
+            if (!this.bot || this.status !== 'online')
+                return;
+            const elapsed = Date.now() - this.lastKeepAlivePacketTime;
+            if (elapsed >= 22000) {
+                console.warn(`[Bot ${this.config.username}] In-game watchdog: No server keepalive for ${(elapsed / 1000).toFixed(1)}s. Silent proxy drop detected!`);
+                this.emitChatMessage(`⚠️ In-game connection lost (proxy drop). Auto-reconnecting in 8s to beat server shutdown...`, undefined, true);
+                if (this.inGameWatchdogInterval) {
+                    clearInterval(this.inGameWatchdogInterval);
+                    this.inGameWatchdogInterval = null;
+                }
+                try {
+                    this.bot?._client?.end('keepAliveWatchdogTimeout');
+                }
+                catch (e) { }
+                this.handleAutoReconnect('In-game keep-alive lost (proxy dropped)');
+            }
+        }, 2000);
+    }
+    /**
      * Periodic State Broadcasting (Paused when no dashboard clients are connected to save CPU)
      */
     startStateBroadcasting() {
@@ -1810,7 +1853,9 @@ class BotInstance {
         const isBootingKick = reason.toLowerCase().includes('booting') ||
             reason.toLowerCase().includes('startup') ||
             reason.toLowerCase().includes('warming');
-        const safeDelays = [12000, 15000, 20000, 30000, 45000];
+        // First retry delay is 8s to safely beat Aternos' 60s empty server shutdown:
+        // 22s watchdog detection + 8s Netty session cleanup = 30s total turnaround (30s buffer before Aternos pauses)
+        const safeDelays = [8000, 15000, 20000, 30000, 45000];
         const isFast = this.retryCount < safeDelays.length;
         const delayMs = isBootingKick ? 15000 : (isFast ? safeDelays[this.retryCount] : 45000);
         const seconds = Math.round(delayMs / 1000);
@@ -1874,6 +1919,10 @@ class BotInstance {
         }
     }
     cleanup() {
+        if (this.inGameWatchdogInterval) {
+            clearInterval(this.inGameWatchdogInterval);
+            this.inGameWatchdogInterval = null;
+        }
         if (this.antiAfkInterval) {
             clearInterval(this.antiAfkInterval);
             this.antiAfkInterval = null;
