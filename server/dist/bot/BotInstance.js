@@ -71,7 +71,9 @@ class BotInstance {
     destroyBot() {
         if (this.bot) {
             try {
+                // Defensive: Pre-absorb any error events fired during teardown so they never bubble to uncaughtException
                 this.bot.removeAllListeners();
+                this.bot.on('error', () => { });
                 if (this.bot.pathfinder) {
                     try {
                         this.bot.pathfinder.stop();
@@ -82,10 +84,12 @@ class BotInstance {
                 if (client) {
                     if (typeof client.removeAllListeners === 'function') {
                         client.removeAllListeners();
+                        client.on('error', () => { });
                     }
                     if (client.socket && typeof client.socket.destroy === 'function') {
                         try {
                             client.socket.removeAllListeners();
+                            client.socket.on('error', () => { });
                             client.socket.destroy();
                         }
                         catch (e) { }
@@ -138,17 +142,22 @@ class BotInstance {
         this.broadcastState();
         console.log(`[Bot ${this.config.username}] Connecting to ${hostValidation.sanitized}:${portValidation.sanitized}...`);
         this.emitChatMessage(`Connecting to ${this.config.serverIp}:${this.config.serverPort}...`, undefined, true);
-        // Direct DNS Resolution: Log resolved IPs for diagnostics
+        // Direct DNS Resolution: Query Cloudflare (1.1.1.1) and Google (8.8.8.8) directly to bypass container DNS cache
+        let targetHost = hostValidation.sanitized;
         try {
-            if (net_1.default.isIP(hostValidation.sanitized) === 0) {
-                const resolvedIps = await dns_1.default.promises.resolve4(hostValidation.sanitized);
+            if (net_1.default.isIP(targetHost) === 0) {
+                const resolver = new dns_1.default.promises.Resolver();
+                resolver.setServers(['1.1.1.1', '8.8.8.8']);
+                const resolvedIps = await resolver.resolve4(targetHost);
                 if (resolvedIps && resolvedIps.length > 0) {
-                    console.log(`[Bot ${this.config.username}] DNS resolved ${hostValidation.sanitized} -> [${resolvedIps.join(', ')}]`);
+                    targetHost = resolvedIps[0];
+                    console.log(`[Bot ${this.config.username}] Live DNS resolved ${hostValidation.sanitized} -> ${targetHost} (Fleet: [${resolvedIps.join(', ')}])`);
                 }
             }
         }
         catch (e) {
-            // Fallback silently if direct DNS query encounters an issue
+            // Fallback silently to domain hostname if external query encounters an issue
+            targetHost = hostValidation.sanitized;
         }
         try {
             const botOpts = {
@@ -168,16 +177,16 @@ class BotInstance {
                 },
                 connect: (client) => {
                     const socket = net_1.default.connect({
-                        host: hostValidation.sanitized,
+                        host: targetHost,
                         port: portValidation.sanitized,
                     });
                     // Enable TCP KeepAlive probes at the OS layer (10s interval) to prevent cloud firewalls / NAT timeouts
                     socket.setKeepAlive(true, 10000);
                     if (socket.setNoDelay)
                         socket.setNoDelay(true);
-                    // 35-Second Network Connection Timeout Guard:
-                    // Gives newly started Aternos German nodes ample time to open port forwards and bind container
-                    socket.setTimeout(35000);
+                    // 12-Second Network Connection Timeout Guard:
+                    // Fast-fails unresponsive cold-boot nodes so auto-reconnect can hit the newly ready server before Aternos 60s empty pause
+                    socket.setTimeout(12000);
                     const onConnect = () => {
                         // Once TCP network connection is made, clear connect timeout and remove listener completely
                         socket.setTimeout(0);
@@ -185,7 +194,8 @@ class BotInstance {
                     };
                     const onTimeout = () => {
                         socket.removeListener('connect', onConnect);
-                        socket.destroy(new Error(`connect ETIMEDOUT ${hostValidation.sanitized}:${portValidation.sanitized}`));
+                        // Clean socket closure without throwing raw Error event to avoid unhandled race conditions
+                        socket.destroy();
                     };
                     socket.once('connect', onConnect);
                     socket.once('timeout', onTimeout);
@@ -583,8 +593,7 @@ class BotInstance {
             else if (this.config.version &&
                 this.config.version !== 'auto' &&
                 (reasonStr.toLowerCase().includes('outdated') ||
-                    reasonStr.toLowerCase().includes('protocol') ||
-                    reasonStr.includes('Connection rejected'))) {
+                    reasonStr.toLowerCase().includes('protocol'))) {
                 console.log(`[Bot ${this.config.username}] Handshake rejected with version ${this.config.version}. Switching to auto-negotiate for retry.`);
                 this.emitChatMessage(`⚠️ Server rejected version ${this.config.version}. Auto-detecting exact server version on retry...`, undefined, true);
                 this.config.version = 'auto';
@@ -1907,11 +1916,11 @@ class BotInstance {
             });
             return;
         }
-        // Rapid Reconnect Phase (Attempts 1-5): 3s, 6s, 10s, 15s, 20s to beat Aternos 60s empty window
-        // Extended Polling Phase (Attempts 6+): Retries every 30s until 10-minute window is reached
-        const rapidDelays = [3000, 6000, 10000, 15000, 20000];
+        // Rapid Reconnect Phase (Attempts 1-6): 2s, 3s, 5s, 5s, 7s, 10s to beat Aternos 60s empty window
+        // Extended Polling Phase (Attempts 7+): Retries every 20s until 10-minute window is reached
+        const rapidDelays = [2000, 3000, 5000, 5000, 7000, 10000];
         const isRapid = this.retryCount < rapidDelays.length;
-        const delayMs = isRapid ? rapidDelays[this.retryCount] : 30000;
+        const delayMs = isRapid ? rapidDelays[this.retryCount] : 20000;
         const seconds = Math.round(delayMs / 1000);
         this.retryCount++;
         this.nextRetryAt = Date.now() + delayMs;
