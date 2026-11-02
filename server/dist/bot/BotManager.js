@@ -88,14 +88,9 @@ class BotManager {
                         }
                     }, currentDelay);
                 }
-                else if (existing.status === 'offline' || existing.status === 'error') {
-                    setTimeout(() => {
-                        console.log(`[BotManager Keep-Alive] Slot ${slotId} is ${existing.status}. Reviving connection to ${slotData.config.serverIp}:${slotData.config.serverPort}...`);
-                        existing.isExplicitlyStopped = false;
-                        existing.cancelRetryTimer();
-                        existing.start(true);
-                    }, currentDelay);
-                }
+                // If an instance already exists, do not forcefully restart it here.
+                // BotInstance manages its own calibrated exponential backoff and teardown window
+                // without creating rapid connection storms against the Minecraft server proxy.
             }
         }
         return {
