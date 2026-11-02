@@ -37,7 +37,8 @@ class BotInstance {
     // Smart Reconnect & Offline Handling
     isExplicitlyStopped = false;
     retryCount = 0;
-    maxRetries = 5;
+    reconnectStartedAt = 0;
+    maxReconnectDurationMs = 10 * 60 * 1000; // 10-minute max retry window when server is off
     retryTimer = null;
     nextRetryAt = 0;
     // Automation flags
@@ -129,6 +130,8 @@ class BotInstance {
         }
         this.status = 'connecting';
         this.isExplicitlyStopped = false;
+        this.retryCount = 0;
+        this.reconnectStartedAt = 0;
         this.cancelRetryTimer();
         this.broadcastState();
         console.log(`[Bot ${this.config.username}] Connecting to ${hostValidation.sanitized}:${portValidation.sanitized}...`);
@@ -189,13 +192,11 @@ class BotInstance {
                     client.setSocket(socket);
                 },
             };
-            // Version: Use explicitly selected version, autoVersion if auto, or default to 1.21.11
-            if (this.config.version === 'auto') {
-                botOpts.version = false; // Triggers autoVersion in minecraft-protocol
-            }
-            else {
-                botOpts.version = this.config.version || '1.21.11';
-            }
+            // Version: Default directly to 1.21.11 if auto, or use selected version.
+            // This completely eliminates fragile Server List Ping (ping.js) drops!
+            botOpts.version = (!this.config.version || this.config.version === 'auto')
+                ? '1.21.11'
+                : this.config.version;
             this.bot = mineflayer_1.default.createBot(botOpts);
             // Attach core listeners immediately so errors/kicks during connection are always handled
             this.setupListeners();
@@ -316,6 +317,7 @@ class BotInstance {
                 this.spawnTime = Date.now();
                 this.errorMessage = null;
                 this.retryCount = 0;
+                this.reconnectStartedAt = 0;
                 this.cancelRetryTimer();
                 // Setup pathfinder movements with anti-cheat safe defaults & door navigation
                 if (this.bot) {
@@ -1329,20 +1331,24 @@ class BotInstance {
                 // Standard Compass Step Cycle:
                 const dir = cardinalDirections[this.afkDirectionIndex % cardinalDirections.length];
                 this.afkDirectionIndex++;
-                // 1. Face the cardinal direction with slight natural pitch variation
-                const slightPitch = (Math.random() - 0.5) * 0.1;
-                this.bot.look(dir.yaw, slightPitch, true);
-                // 2. Step forward 1 block (~240ms)
+                // 1. Face the cardinal direction with natural pitch variation (-0.15 rad to +0.15 rad)
+                const naturalPitch = ((this.afkDirectionIndex % 3) - 1) * 0.15;
+                this.bot.look(dir.yaw, naturalPitch, true);
+                // 2. Step forward ~2.4 blocks (550ms) with occasional jump to register vertical motion
                 this.bot.setControlState('forward', true);
+                if (Math.random() < 0.4) {
+                    this.bot.setControlState('jump', true);
+                }
                 setTimeout(() => {
                     if (!this.bot || this.isFollowing)
                         return;
                     this.bot.setControlState('forward', false);
-                    // 3. Pause 200ms at destination block so server records the block transition
+                    this.bot.setControlState('jump', false);
+                    // 3. Pause 250ms at destination block so server records the block transition
                     setTimeout(() => {
                         if (!this.bot || this.isFollowing)
                             return;
-                        // 4. Step backward 1 block (~240ms) to return to center
+                        // 4. Step backward to return to center anchor
                         this.bot.setControlState('back', true);
                         setTimeout(() => {
                             if (this.bot) {
@@ -1350,9 +1356,9 @@ class BotInstance {
                                 // Active server keep-alive pulse: arm swing registers player interaction packet
                                 this.bot.swingArm('right');
                             }
-                        }, 240);
-                    }, 200);
-                }, 240);
+                        }, 550);
+                    }, 250);
+                }, 550);
             }
             catch (e) { }
         }, 10000);
@@ -1839,7 +1845,7 @@ class BotInstance {
             isSleeping: isOnline ? Boolean(this.bot?.isSleeping) : false,
             retryInfo: (this.status === 'connecting' && (this.retryTimer || this.tempLeaveTimer) && this.nextRetryAt > 0) ? {
                 attempt: this.tempLeaveTimer ? 1 : this.retryCount,
-                maxAttempts: this.tempLeaveTimer ? 1 : this.maxRetries,
+                maxAttempts: this.tempLeaveTimer ? 1 : 24,
                 nextRetryAt: this.nextRetryAt,
                 isNightSkip: Boolean(this.tempLeaveTimer),
             } : null,
@@ -1870,43 +1876,51 @@ class BotInstance {
         this.uptimeStart = 0;
         this.destroyBot();
         this.cleanup();
-        // Rapid Reconnect Intervals (beating Aternos 60-second empty server shutdown window)
-        const retryDelays = [3000, 6000, 10000, 15000, 20000];
-        if (this.retryCount < this.maxRetries) {
-            const delayMs = retryDelays[this.retryCount] || 120000;
-            const seconds = Math.round(delayMs / 1000);
-            this.retryCount++;
-            this.nextRetryAt = Date.now() + delayMs;
-            this.status = 'connecting';
-            this.errorMessage = reason;
-            console.log(`[Bot ${this.config.username}] ${reason}. Reconnecting in ${seconds}s (Attempt ${this.retryCount}/${this.maxRetries})...`);
-            this.emitChatMessage(`⚠️ ${reason} - Reconnecting in ${seconds}s (Attempt ${this.retryCount}/${this.maxRetries})...`, undefined, true);
-            this.broadcastState();
-            this.retryTimer = setTimeout(() => {
-                this.retryTimer = null;
-                this.nextRetryAt = 0;
-                if (this.isExplicitlyStopped)
-                    return;
-                console.log(`[Bot ${this.config.username}] Auto-reconnect attempt ${this.retryCount}/${this.maxRetries} to ${this.config.serverIp}:${this.config.serverPort}...`);
-                this.emitChatMessage(`🔄 Attempting reconnect to ${this.config.serverIp}:${this.config.serverPort} (Attempt ${this.retryCount}/${this.maxRetries})...`, undefined, true);
-                this.start();
-            }, delayMs);
+        if (!this.reconnectStartedAt) {
+            this.reconnectStartedAt = Date.now();
         }
-        else {
-            // Retries exhausted (server is definitely offline)
+        const elapsedMs = Date.now() - this.reconnectStartedAt;
+        if (elapsedMs >= this.maxReconnectDurationMs) {
+            // 10-Minute Retry Window Reached: Server is shut down / offline.
+            // Stop the reconnection loop cleanly so it does not loop forever while server is off.
             this.status = 'offline';
             this.nextRetryAt = 0;
-            this.errorMessage = `Minecraft server is offline (unreachable after ${this.maxRetries} attempts). Click "Retry Now" when server is back up.`;
-            console.warn(`[Bot ${this.config.username}] Max retries reached. Server is offline.`);
+            this.reconnectStartedAt = 0;
+            this.errorMessage = 'Server is offline (stopped after 10 minutes of retries). Click "Retry Now" when server is back up.';
+            console.log(`[Bot ${this.config.username}] Server offline after 10 minutes of retries. Stopping auto-reconnect.`);
+            this.emitChatMessage(`⏹️ Server offline after 10 minutes of retries. Stopping auto-reconnect.`, undefined, true);
             this.cancelRetryTimer();
             this.broadcastState();
             this.io.to(this.userId).emit('server-offline', {
                 slotId: this.userId,
                 serverIp: this.config.serverIp,
                 serverPort: this.config.serverPort,
-                attempts: this.maxRetries,
+                attempts: this.retryCount,
             });
+            return;
         }
+        // Rapid Reconnect Phase (Attempts 1-5): 2s, 4s, 7s, 10s, 15s to beat Aternos 60s empty window
+        // Extended Polling Phase (Attempts 6+): Retries every 30s until 10-minute window is reached
+        const rapidDelays = [2000, 4000, 7000, 10000, 15000];
+        const isRapid = this.retryCount < rapidDelays.length;
+        const delayMs = isRapid ? rapidDelays[this.retryCount] : 30000;
+        const seconds = Math.round(delayMs / 1000);
+        this.retryCount++;
+        this.nextRetryAt = Date.now() + delayMs;
+        this.status = 'connecting';
+        this.errorMessage = reason;
+        console.log(`[Bot ${this.config.username}] ${reason}. Reconnecting in ${seconds}s (Attempt ${this.retryCount})...`);
+        this.emitChatMessage(`⚠️ ${reason} - Reconnecting in ${seconds}s (Attempt ${this.retryCount})...`, undefined, true);
+        this.broadcastState();
+        this.retryTimer = setTimeout(() => {
+            this.retryTimer = null;
+            this.nextRetryAt = 0;
+            if (this.isExplicitlyStopped)
+                return;
+            console.log(`[Bot ${this.config.username}] Auto-reconnect attempt ${this.retryCount} to ${this.config.serverIp}:${this.config.serverPort}...`);
+            this.emitChatMessage(`🔄 Attempting reconnect to ${this.config.serverIp}:${this.config.serverPort} (Attempt ${this.retryCount})...`, undefined, true);
+            this.start();
+        }, delayMs);
     }
     cancelRetryTimer() {
         if (this.retryTimer) {
@@ -1938,6 +1952,7 @@ class BotInstance {
         this.isExplicitlyStopped = true;
         this.cancelRetryTimer();
         this.retryCount = 0;
+        this.reconnectStartedAt = 0;
         this.nextRetryAt = 0;
         this.status = 'offline';
         this.uptimeStart = 0;
