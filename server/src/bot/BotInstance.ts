@@ -170,92 +170,32 @@ export class BotInstance {
     console.log(`[Bot ${this.config.username}] Connecting to ${hostValidation.sanitized}:${portValidation.sanitized}...`);
     this.emitChatMessage(`Connecting to ${this.config.serverIp}:${this.config.serverPort}...`, undefined, true);
 
-    // Direct DNS Resolution: Query Cloudflare (1.1.1.1) and Google (8.8.8.8) directly to bypass container DNS cache
-    let targetHost: string = hostValidation.sanitized!;
-    try {
-      if (net.isIP(targetHost) === 0) {
-        const resolver = new dns.promises.Resolver();
-        resolver.setServers(['1.1.1.1', '8.8.8.8']);
-        const resolvedIps = await resolver.resolve4(targetHost);
-        if (resolvedIps && resolvedIps.length > 0) {
-          targetHost = resolvedIps[0];
-          console.log(`[Bot ${this.config.username}] Live DNS resolved ${hostValidation.sanitized} -> ${targetHost} (Fleet: [${resolvedIps.join(', ')}])`);
-        }
-      }
-    } catch (e: any) {
-      // Fallback silently to domain hostname if external query encounters an issue
-      targetHost = hostValidation.sanitized!;
-    }
-
     try {
       const botOpts: any = {
         host: hostValidation.sanitized!,
         port: portValidation.sanitized!,
         username: userValidation.sanitized!,
         auth: 'offline', // Cracked server authentication
+        version: (!this.config.version || this.config.version === 'auto')
+          ? '1.21.11'
+          : this.config.version,
         checkTimeoutInterval: 90000, // 90s ping timeout (absorbs Aternos CPU lag spikes)
         hideErrors: false,
-        plugins: {
-          earlyErrorGuard: (bot: any) => {
-            // Defensive pre-listener absorbs early handshake errors safely
-            bot.on('error', (err: any) => {
-              // Absorbed; setupListeners attaches full logging and reconnect logic
-            });
-          },
-        },
-        connect: (client: any) => {
-          const socket = net.connect({
-            host: targetHost,
-            port: portValidation.sanitized!,
-          });
-
-          // Enable TCP KeepAlive probes at the OS layer (10s interval) to prevent cloud firewalls / NAT timeouts
-          socket.setKeepAlive(true, 10000);
-          if (socket.setNoDelay) socket.setNoDelay(true);
-
-          // 12-Second Network Connection Timeout Guard:
-          // Fast-fails unresponsive cold-boot nodes so auto-reconnect can hit the newly ready server before Aternos 60s empty pause
-          socket.setTimeout(12000);
-
-          const onConnect = () => {
-            // Once TCP network connection is made, clear connect timeout and remove listener completely
-            socket.setTimeout(0);
-            socket.removeListener('timeout', onTimeout);
-          };
-
-          const onTimeout = () => {
-            socket.removeListener('connect', onConnect);
-            // Clean socket closure without throwing raw Error event to avoid unhandled race conditions
-            socket.destroy();
-          };
-
-          socket.once('connect', onConnect);
-          socket.once('timeout', onTimeout);
-
-          // Defensive: Absorb raw socket errors before client attaches to avoid uncaught exceptions
-          socket.on('error', (err) => {
-            // Handled safely by client onFatalError once attached
-          });
-
-          // Defensive: Pre-bind error handler on client before setSocket to prevent unhandled exceptions during handshake timeouts
-          if (client && typeof client.on === 'function' && client.listeners('error').length === 0) {
-            client.on('error', () => {});
-          }
-
-          client.setSocket(socket);
-        },
       };
-
-      // Version: Default directly to 1.21.11 if auto, or use selected version.
-      // This completely eliminates fragile Server List Ping (ping.js) drops!
-      botOpts.version = (!this.config.version || this.config.version === 'auto')
-        ? '1.21.11'
-        : this.config.version;
 
       this.bot = mineflayer.createBot(botOpts);
 
       // Attach core listeners immediately so errors/kicks during connection are always handled
       this.setupListeners();
+
+      // Enable TCP KeepAlive probes at the OS layer (10s interval) once connected
+      (this.bot as any).on('connect', () => {
+        const client = (this.bot as any)?._client;
+        if (client && client.socket) {
+          client.socket.setKeepAlive(true, 10000);
+          if (client.socket.setNoDelay) client.socket.setNoDelay(true);
+        }
+      });
 
       // Defensive: Catch low-level client socket errors (e.g. ECONNRESET, broken pipes, ETIMEDOUT)
       const attachClientListeners = (client: any) => {
@@ -2050,16 +1990,15 @@ export class BotInstance {
       return;
     }
 
-    // Rapid Reconnect Phase (Attempts 1-6): 2s, 3s, 5s, 5s, 7s, 10s to beat Aternos 60s empty window
-    // Extended Polling Phase (Attempts 7+): Retries every 20s until 10-minute window is reached
-    // If kicked during server boot/startup, retry aggressively in 3s so the bot catches the server as soon as it says "Done!"
+    // Safe progressive reconnection delays: 10s, 15s, 20s, 30s, 45s (prevents Aternos rate limits)
+    // If kicked during server boot/startup, retry in 6s so the bot catches the server safely without flood triggering
     const isBootingKick = reason.toLowerCase().includes('booting') ||
                           reason.toLowerCase().includes('startup') ||
                           reason.toLowerCase().includes('warming') ||
                           reason.toLowerCase().includes('rejected');
-    const rapidDelays = [2000, 3000, 5000, 5000, 7000, 10000];
-    const isRapid = this.retryCount < rapidDelays.length;
-    const delayMs = isBootingKick ? 3000 : (isRapid ? rapidDelays[this.retryCount] : 20000);
+    const safeDelays = [10000, 15000, 20000, 30000, 45000];
+    const isFast = this.retryCount < safeDelays.length;
+    const delayMs = isBootingKick ? 6000 : (isFast ? safeDelays[this.retryCount] : 45000);
     const seconds = Math.round(delayMs / 1000);
     this.retryCount++;
     this.nextRetryAt = Date.now() + delayMs;
