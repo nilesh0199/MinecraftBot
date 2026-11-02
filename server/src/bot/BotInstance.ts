@@ -165,7 +165,7 @@ export class BotInstance {
         version: (!this.config.version || this.config.version === 'auto')
           ? '1.21.11'
           : this.config.version,
-        checkTimeoutInterval: 45000,
+        checkTimeoutInterval: 120000, // 120 seconds: absorbs Aternos chunk generation & tick lag spikes
         hideErrors: false,
       };
 
