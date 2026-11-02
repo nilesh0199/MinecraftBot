@@ -205,22 +205,16 @@ export class BotInstance {
           const isTimeout = err?.code === 'ETIMEDOUT' || err?.message?.includes('ETIMEDOUT');
           const isReset = err?.code === 'ECONNRESET' || err?.message?.includes('ECONNRESET');
           const reason = isTimeout
-            ? 'Connection timed out (Server offline or firewall unreachable)'
+            ? 'Connection timed out (Server offline or unreachable)'
             : isReset
             ? 'Connection reset (Server offline or restarting)'
             : (err?.message || 'Socket error');
           this.handleAutoReconnect(reason);
         });
-        client.on('end', () => {
-          this.handleAutoReconnect('Minecraft client stream ended');
-        });
         client.on('connect_allowed', () => {
           if (client.socket && client.socket.on) {
             client.socket.on('error', (err: any) => {
               console.error(`[Bot ${this.config.username} TCP Error Caught]:`, err?.message);
-            });
-            client.socket.on('close', () => {
-              this.handleAutoReconnect('TCP socket closed');
             });
           }
         });
@@ -577,7 +571,7 @@ export class BotInstance {
         }
       }
       if (!reasonStr || reasonStr === '{"text":""}' || reasonStr === '{}') {
-        reasonStr = 'Server is booting up (handshake rejected during startup)';
+        reasonStr = 'Server is offline or starting up (Aternos server rejected connection)';
       }
       console.log(`[Bot ${this.config.username}] Kicked from server: ${reasonStr}`);
 
@@ -1990,15 +1984,14 @@ export class BotInstance {
       return;
     }
 
-    // Safe progressive reconnection delays: 10s, 15s, 20s, 30s, 45s (prevents Aternos rate limits)
-    // If kicked during server boot/startup, retry in 6s so the bot catches the server safely without flood triggering
+    // Safe progressive reconnection delays: 5s, 10s, 15s, 20s, 30s
+    // If kicked during server boot/startup, retry in 6s so the bot catches the server safely
     const isBootingKick = reason.toLowerCase().includes('booting') ||
                           reason.toLowerCase().includes('startup') ||
-                          reason.toLowerCase().includes('warming') ||
-                          reason.toLowerCase().includes('rejected');
-    const safeDelays = [10000, 15000, 20000, 30000, 45000];
+                          reason.toLowerCase().includes('warming');
+    const safeDelays = [5000, 10000, 15000, 20000, 30000];
     const isFast = this.retryCount < safeDelays.length;
-    const delayMs = isBootingKick ? 6000 : (isFast ? safeDelays[this.retryCount] : 45000);
+    const delayMs = isBootingKick ? 6000 : (isFast ? safeDelays[this.retryCount] : 30000);
     const seconds = Math.round(delayMs / 1000);
     this.retryCount++;
     this.nextRetryAt = Date.now() + delayMs;
