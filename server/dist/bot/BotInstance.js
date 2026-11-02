@@ -149,7 +149,7 @@ class BotInstance {
                 version: (!this.config.version || this.config.version === 'auto')
                     ? '1.21.11'
                     : this.config.version,
-                checkTimeoutInterval: 90000, // 90s ping timeout (absorbs Aternos CPU lag spikes)
+                checkTimeoutInterval: 25000, // 25s ping timeout (detects connection drops within 25s to beat Aternos 60s empty pause)
                 hideErrors: false,
             };
             this.bot = mineflayer_1.default.createBot(botOpts);
@@ -1318,7 +1318,7 @@ class BotInstance {
                 }, 550);
             }
             catch (e) { }
-        }, 10000);
+        }, 7000);
     }
     setAntiAfk(enabled) {
         this.isAntiAfkActive = enabled;
@@ -1856,14 +1856,14 @@ class BotInstance {
             });
             return;
         }
-        // Safe progressive reconnection delays: 5s, 10s, 15s, 20s, 30s
-        // If kicked during server boot/startup, retry in 6s so the bot catches the server safely
+        // Safe progressive reconnection delays: 2s, 4s, 8s, 15s, 30s
+        // Rapid initial reconnects (2s/4s) ensure the bot rejoins well before Aternos 60s empty pause
         const isBootingKick = reason.toLowerCase().includes('booting') ||
             reason.toLowerCase().includes('startup') ||
             reason.toLowerCase().includes('warming');
-        const safeDelays = [5000, 10000, 15000, 20000, 30000];
+        const safeDelays = [2000, 4000, 8000, 15000, 30000];
         const isFast = this.retryCount < safeDelays.length;
-        const delayMs = isBootingKick ? 6000 : (isFast ? safeDelays[this.retryCount] : 30000);
+        const delayMs = isBootingKick ? 4000 : (isFast ? safeDelays[this.retryCount] : 30000);
         const seconds = Math.round(delayMs / 1000);
         this.retryCount++;
         this.nextRetryAt = Date.now() + delayMs;
