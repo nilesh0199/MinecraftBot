@@ -165,18 +165,16 @@ export class BotInstance {
     console.log(`[Bot ${this.config.username}] Connecting to ${hostValidation.sanitized}:${portValidation.sanitized}...`);
     this.emitChatMessage(`Connecting to ${this.config.serverIp}:${this.config.serverPort}...`, undefined, true);
 
-    // Direct DNS Resolution: Bypass stale OS getaddrinfo cache to obtain the active Aternos German node IP
-    let targetIp: string = hostValidation.sanitized!;
+    // Direct DNS Resolution: Log resolved IPs for diagnostics
     try {
-      if (net.isIP(targetIp) === 0) {
-        const resolvedIps = await dns.promises.resolve4(targetIp);
+      if (net.isIP(hostValidation.sanitized!) === 0) {
+        const resolvedIps = await dns.promises.resolve4(hostValidation.sanitized!);
         if (resolvedIps && resolvedIps.length > 0) {
-          targetIp = resolvedIps[0];
-          console.log(`[Bot ${this.config.username}] Fresh DNS resolved ${hostValidation.sanitized} -> ${targetIp}`);
+          console.log(`[Bot ${this.config.username}] DNS resolved ${hostValidation.sanitized} -> [${resolvedIps.join(', ')}]`);
         }
       }
     } catch (e: any) {
-      // Fallback to domain hostname if network DNS query encounters an issue
+      // Fallback silently if direct DNS query encounters an issue
     }
 
     try {
@@ -187,9 +185,17 @@ export class BotInstance {
         auth: 'offline', // Cracked server authentication
         checkTimeoutInterval: 90000, // 90s ping timeout (absorbs Aternos CPU lag spikes)
         hideErrors: false,
+        plugins: {
+          earlyErrorGuard: (bot: any) => {
+            // Defensive pre-listener absorbs early handshake errors safely
+            bot.on('error', (err: any) => {
+              // Absorbed; setupListeners attaches full logging and reconnect logic
+            });
+          },
+        },
         connect: (client: any) => {
           const socket = net.connect({
-            host: targetIp,
+            host: hostValidation.sanitized!,
             port: portValidation.sanitized!,
           });
 
@@ -197,9 +203,9 @@ export class BotInstance {
           socket.setKeepAlive(true, 10000);
           if (socket.setNoDelay) socket.setNoDelay(true);
 
-          // 20-Second Network Connection Timeout Guard:
-          // Gives newly started Aternos German nodes time to open their port forwards
-          socket.setTimeout(20000);
+          // 35-Second Network Connection Timeout Guard:
+          // Gives newly started Aternos German nodes ample time to open port forwards and bind container
+          socket.setTimeout(35000);
 
           const onConnect = () => {
             // Once TCP network connection is made, clear connect timeout and remove listener completely
@@ -2034,9 +2040,9 @@ export class BotInstance {
       return;
     }
 
-    // Rapid Reconnect Phase (Attempts 1-5): 2s, 4s, 7s, 10s, 15s to beat Aternos 60s empty window
+    // Rapid Reconnect Phase (Attempts 1-5): 3s, 6s, 10s, 15s, 20s to beat Aternos 60s empty window
     // Extended Polling Phase (Attempts 6+): Retries every 30s until 10-minute window is reached
-    const rapidDelays = [2000, 4000, 7000, 10000, 15000];
+    const rapidDelays = [3000, 6000, 10000, 15000, 20000];
     const isRapid = this.retryCount < rapidDelays.length;
     const delayMs = isRapid ? rapidDelays[this.retryCount] : 30000;
     const seconds = Math.round(delayMs / 1000);
