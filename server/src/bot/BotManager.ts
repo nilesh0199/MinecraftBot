@@ -47,15 +47,20 @@ export class BotManager {
       const allSlots = this.slotStorage.getAllSlots();
       const slots: SlotId[] = ['bot_1', 'bot_2'];
 
+      let staggerMs = 0;
       for (const slotId of slots) {
         const slotData = allSlots[slotId];
         if (slotData && slotData.isActive && slotData.config) {
-          console.log(`[BotManager] Auto-resuming active slot ${slotId} (${slotData.config.username} -> ${slotData.config.serverIp}:${slotData.config.serverPort})...`);
-          try {
-            this.spawnInternal(slotId, slotData.config);
-          } catch (e) {
-            console.error(`[BotManager] Failed to auto-resume ${slotId}:`, e);
-          }
+          const currentDelay = staggerMs;
+          staggerMs += 4000;
+          setTimeout(() => {
+            console.log(`[BotManager] Auto-resuming active slot ${slotId} (${slotData.config!.username} -> ${slotData.config!.serverIp}:${slotData.config!.serverPort})...`);
+            try {
+              this.spawnInternal(slotId, slotData.config!);
+            } catch (e) {
+              console.error(`[BotManager] Failed to auto-resume ${slotId}:`, e);
+            }
+          }, currentDelay);
         }
       }
     } catch (err) {
@@ -70,22 +75,29 @@ export class BotManager {
     const slots: SlotId[] = ['bot_1', 'bot_2'];
     const allSlots = this.slotStorage.getAllSlots();
 
+    let staggerMs = 0;
     for (const slotId of slots) {
       const slotData = allSlots[slotId];
       if (slotData && slotData.isActive && slotData.config) {
+        const currentDelay = staggerMs;
+        staggerMs += 4000;
         const existing = this.bots.get(slotId);
         if (!existing) {
-          console.log(`[BotManager Keep-Alive] Slot ${slotId} is marked active but missing instance. Reviving now...`);
-          try {
-            this.spawnInternal(slotId, slotData.config);
-          } catch (e) {
-            console.error(`[BotManager Keep-Alive] Failed to revive ${slotId}:`, e);
-          }
+          setTimeout(() => {
+            console.log(`[BotManager Keep-Alive] Slot ${slotId} is marked active but missing instance. Reviving now...`);
+            try {
+              this.spawnInternal(slotId, slotData.config!);
+            } catch (e) {
+              console.error(`[BotManager Keep-Alive] Failed to revive ${slotId}:`, e);
+            }
+          }, currentDelay);
         } else if (existing.status === 'offline' || existing.status === 'error') {
-          console.log(`[BotManager Keep-Alive] Slot ${slotId} is ${existing.status}. Reviving connection to ${slotData.config.serverIp}:${slotData.config.serverPort}...`);
-          existing.isExplicitlyStopped = false;
-          existing.cancelRetryTimer();
-          existing.start(true);
+          setTimeout(() => {
+            console.log(`[BotManager Keep-Alive] Slot ${slotId} is ${existing.status}. Reviving connection to ${slotData.config!.serverIp}:${slotData.config!.serverPort}...`);
+            existing.isExplicitlyStopped = false;
+            existing.cancelRetryTimer();
+            existing.start(true);
+          }, currentDelay);
         }
       }
     }

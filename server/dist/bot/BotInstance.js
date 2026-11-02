@@ -580,7 +580,7 @@ class BotInstance {
                 }
             }
             if (!reasonStr || reasonStr === '{"text":""}' || reasonStr === '{}') {
-                reasonStr = 'Disconnected by server (Connection rejected or session ended)';
+                reasonStr = 'Server is booting up (handshake rejected during startup)';
             }
             console.log(`[Bot ${this.config.username}] Kicked from server: ${reasonStr}`);
             // Auto-detect version mismatch from kick message to self-heal on next reconnect
@@ -1918,9 +1918,14 @@ class BotInstance {
         }
         // Rapid Reconnect Phase (Attempts 1-6): 2s, 3s, 5s, 5s, 7s, 10s to beat Aternos 60s empty window
         // Extended Polling Phase (Attempts 7+): Retries every 20s until 10-minute window is reached
+        // If kicked during server boot/startup, retry aggressively in 3s so the bot catches the server as soon as it says "Done!"
+        const isBootingKick = reason.toLowerCase().includes('booting') ||
+            reason.toLowerCase().includes('startup') ||
+            reason.toLowerCase().includes('warming') ||
+            reason.toLowerCase().includes('rejected');
         const rapidDelays = [2000, 3000, 5000, 5000, 7000, 10000];
         const isRapid = this.retryCount < rapidDelays.length;
-        const delayMs = isRapid ? rapidDelays[this.retryCount] : 20000;
+        const delayMs = isBootingKick ? 3000 : (isRapid ? rapidDelays[this.retryCount] : 20000);
         const seconds = Math.round(delayMs / 1000);
         this.retryCount++;
         this.nextRetryAt = Date.now() + delayMs;
