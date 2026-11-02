@@ -1984,14 +1984,17 @@ export class BotInstance {
       return;
     }
 
-    // Safe progressive reconnection delays: 2s, 4s, 8s, 15s, 30s
-    // Rapid initial reconnects (2s/4s) ensure the bot rejoins well before Aternos 60s empty pause
+    // Calibrated Reconnection Delays for Aternos (Based on Mineflayer/Aternos research):
+    // When a bot disconnects, Minecraft Netty threads take 8-12 seconds to save player data
+    // and remove the player from the active session map (preventing "Already connected" kicks).
+    // The Aternos front-end proxy also rate-limits rapid-fire handshakes under 10s.
+    // 12s delay provides the required teardown window while safely beating Aternos' 60s empty pause!
     const isBootingKick = reason.toLowerCase().includes('booting') ||
                           reason.toLowerCase().includes('startup') ||
                           reason.toLowerCase().includes('warming');
-    const safeDelays = [2000, 4000, 8000, 15000, 30000];
+    const safeDelays = [12000, 15000, 20000, 30000, 45000];
     const isFast = this.retryCount < safeDelays.length;
-    const delayMs = isBootingKick ? 4000 : (isFast ? safeDelays[this.retryCount] : 30000);
+    const delayMs = isBootingKick ? 15000 : (isFast ? safeDelays[this.retryCount] : 45000);
     const seconds = Math.round(delayMs / 1000);
     this.retryCount++;
     this.nextRetryAt = Date.now() + delayMs;
