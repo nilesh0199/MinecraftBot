@@ -82,7 +82,7 @@ class BotManager {
                     console.log(`[BotManager Keep-Alive] Slot ${slotId} is ${existing.status}. Reviving connection to ${slotData.config.serverIp}:${slotData.config.serverPort}...`);
                     existing.isExplicitlyStopped = false;
                     existing.cancelRetryTimer();
-                    existing.start();
+                    existing.start(true);
                 }
             }
         }
@@ -132,7 +132,7 @@ class BotManager {
             console.log(`[BotManager] Bot username updated for ${slotOrUserId}: ${newUsername}`);
         };
         this.bots.set(slotOrUserId, botInstance);
-        botInstance.start();
+        botInstance.start(true);
         return botInstance;
     }
     startBot(slotOrUserId, config) {

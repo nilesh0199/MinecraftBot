@@ -113,7 +113,7 @@ export class BotInstance {
     }
   }
 
-  public async start() {
+  public async start(isManual: boolean = false) {
     this.destroyBot();
 
     // Universal host and port normalization (handles host:port, prefixes, trailing slashes)
@@ -155,8 +155,10 @@ export class BotInstance {
 
     this.status = 'connecting';
     this.isExplicitlyStopped = false;
-    this.retryCount = 0;
-    this.reconnectStartedAt = 0;
+    if (isManual) {
+      this.retryCount = 0;
+      this.reconnectStartedAt = 0;
+    }
     this.cancelRetryTimer();
     this.broadcastState();
 
@@ -195,9 +197,9 @@ export class BotInstance {
           socket.setKeepAlive(true, 10000);
           if (socket.setNoDelay) socket.setNoDelay(true);
 
-          // 12-Second Network Connection Timeout Guard:
-          // If server IP is black-holed or unreachable, abort in 12s instead of 180s Linux hang
-          socket.setTimeout(12000);
+          // 20-Second Network Connection Timeout Guard:
+          // Gives newly started Aternos German nodes time to open their port forwards
+          socket.setTimeout(20000);
 
           const onConnect = () => {
             // Once TCP network connection is made, clear connect timeout and remove listener completely

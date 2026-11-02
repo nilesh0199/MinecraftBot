@@ -97,7 +97,7 @@ class BotInstance {
             this.bot = null;
         }
     }
-    async start() {
+    async start(isManual = false) {
         this.destroyBot();
         // Universal host and port normalization (handles host:port, prefixes, trailing slashes)
         const { host: cleanedHost, port: cleanedPort } = validator_1.SecurityValidator.cleanServerAddressAndPort(this.config.serverIp, this.config.serverPort);
@@ -130,8 +130,10 @@ class BotInstance {
         }
         this.status = 'connecting';
         this.isExplicitlyStopped = false;
-        this.retryCount = 0;
-        this.reconnectStartedAt = 0;
+        if (isManual) {
+            this.retryCount = 0;
+            this.reconnectStartedAt = 0;
+        }
         this.cancelRetryTimer();
         this.broadcastState();
         console.log(`[Bot ${this.config.username}] Connecting to ${hostValidation.sanitized}:${portValidation.sanitized}...`);
@@ -167,9 +169,9 @@ class BotInstance {
                     socket.setKeepAlive(true, 10000);
                     if (socket.setNoDelay)
                         socket.setNoDelay(true);
-                    // 12-Second Network Connection Timeout Guard:
-                    // If server IP is black-holed or unreachable, abort in 12s instead of 180s Linux hang
-                    socket.setTimeout(12000);
+                    // 20-Second Network Connection Timeout Guard:
+                    // Gives newly started Aternos German nodes time to open their port forwards
+                    socket.setTimeout(20000);
                     const onConnect = () => {
                         // Once TCP network connection is made, clear connect timeout and remove listener completely
                         socket.setTimeout(0);
