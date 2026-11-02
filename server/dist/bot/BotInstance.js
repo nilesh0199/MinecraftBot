@@ -153,7 +153,7 @@ class BotInstance {
                 port: portValidation.sanitized,
                 username: userValidation.sanitized,
                 auth: 'offline', // Cracked server authentication
-                checkTimeoutInterval: 45000, // 45s ping timeout
+                checkTimeoutInterval: 90000, // 90s ping timeout (absorbs Aternos CPU lag spikes)
                 hideErrors: false,
                 connect: (client) => {
                     const socket = net_1.default.connect({
@@ -182,6 +182,10 @@ class BotInstance {
                     socket.on('error', (err) => {
                         // Handled safely by client onFatalError once attached
                     });
+                    // Defensive: Pre-bind error handler on client before setSocket to prevent unhandled exceptions during handshake timeouts
+                    if (client && typeof client.on === 'function' && client.listeners('error').length === 0) {
+                        client.on('error', () => { });
+                    }
                     client.setSocket(socket);
                 },
             };

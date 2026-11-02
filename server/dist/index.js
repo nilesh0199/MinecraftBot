@@ -478,4 +478,20 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(` Mode: ${process.env.NODE_ENV || 'development'}`);
     console.log(` Dual-Bot Slot System: Active & Online`);
     console.log(`===============================================`);
+    // Automated 8-Minute Self-Ping: Keeps Render Free Tier awake 24/7 when browser tab is closed
+    const renderExternalUrl = process.env.RENDER_EXTERNAL_URL;
+    if (renderExternalUrl) {
+        const PING_INTERVAL_MS = 8 * 60 * 1000; // 8 minutes (well under Render's 15m idle sleep window)
+        setInterval(async () => {
+            try {
+                const pingUrl = `${renderExternalUrl.replace(/\/+$/, '')}/health`;
+                const res = await fetch(pingUrl);
+                console.log(`[Keep-Alive Self-Ping] Status: ${res.status}`);
+            }
+            catch (err) {
+                console.warn(`[Keep-Alive Self-Ping] Failed:`, err?.message || err);
+            }
+        }, PING_INTERVAL_MS);
+        console.log(`[Keep-Alive] Self-ping active every 8 minutes for ${renderExternalUrl}/health`);
+    }
 });
