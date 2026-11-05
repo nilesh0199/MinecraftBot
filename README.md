@@ -15,8 +15,9 @@ A full-stack, headless Minecraft AFK bot platform with an authentic **Minecraft-
 
 * 🚀 **Zero-Authentication Instant Access**: The dashboard is the landing page. No Google OAuth popups, no Firebase configuration, and no login barriers.
 * 🤖 **Dual-Bot Simultaneous Architecture**: Run **two bots simultaneously** on the same server instance. Switch between **Bot 1** and **Bot 2** tabs at the top without disconnecting or stopping either bot.
+* 🛡️ **Two-Phase Adaptive Watchdog**: Solves the Aternos 60-second shutdown dilemma. Phase 1 provides 75s of leeway during heavy world chunk generation, while Phase 2 arms a 22s in-game heartbeat that catches silent proxy drops and re-enters the server within 30 seconds.
 * ⚡ **UptimeRobot Autonomous Revival**: Bot configurations are saved to persistent server storage (`bot-slots.json`). Whenever UptimeRobot pings `/health`, any dropped bots are **automatically reconnected and revived 24/7**.
-* 🌐 **Universal Server & Port Support**: Connect to **any** Minecraft server (Vanilla, Paper, Spigot, Fabric, Aternos, Hypixel, etc.) with default (`25565`) or custom ports (`:16808`, `:25566`).
+* 🌐 **Universal Server & Port Support**: Connect to **any** Minecraft server (Vanilla, Paper, Spigot, Fabric, Aternos, Hypixel, etc.) with default (`25565`) or custom ports (`:16808`, `:25566`), plus full support for Aternos DynIP (`.aternos.host`).
 * 💥 **1.21 Mace Smash Animation**: Authentic Minecraft 1.21 Mace jump, particle smash, and sound effects on connection and on demand.
 * 🛡️ **Lean & Blazing Fast**: Purged 85 unused Firebase packages. Client bundle size reduced by 61% (loads in <1s) with **0 vulnerabilities**.
 
@@ -33,8 +34,12 @@ A full-stack, headless Minecraft AFK bot platform with an authentic **Minecraft-
 
 ### 2. 24/7 Cloud Background & Reconnect Resilience
 * **Runs in Background**: Operates as a persistent daemon. You can close your browser tab or turn off your computer; both bots stay active in-game.
-* **UptimeRobot Keep-Alive**: When UptimeRobot pings `/health` every 5 minutes, the server verifies both bot instances and automatically restarts any offline bots.
-* **Smart Exponential Backoff**: When a Minecraft server restarts or goes offline, CraftBot retries across 5 attempts (5s $\to$ 15s $\to$ 30s $\to$ 60s $\to$ 120s) with a live HUD countdown and an instant **"⚡ Retry Now"** button.
+* **Two-Phase Adaptive Watchdog Engine**:
+  * **Phase 1 (Connecting & World Spawn)**: 75-second grace window to absorb heavy world chunk generation and initial tick lag without premature timeouts.
+  * **Phase 2 (In-Game Watchdog)**: 22-second heartbeat monitor detecting silent TCP proxy disconnects.
+  * **Calibrated 8s Netty Reconnect**: When disconnected, the first retry fires at 8 seconds (22s detection + 8s teardown = 30s turnaround), beating Aternos' 60-second empty server shutdown with 30 seconds of pure margin!
+* **UptimeRobot Keep-Alive**: When UptimeRobot pings `/health` every 5 minutes, the server verifies both bot instances and revives missing bots without spamming connection storms.
+* **Calibrated Exponential Backoff**: When a Minecraft server restarts or goes offline, CraftBot retries across calibrated attempts (8s $\to$ 15s $\to$ 20s $\to$ 30s $\to$ 45s) with a live HUD countdown and an instant **"⚡ Retry Now"** button.
 
 ---
 
@@ -139,6 +144,41 @@ Detailed walkthrough in [**DEPLOY_RENDER.md**](./DEPLOY_RENDER.md).
    npm start
    ```
 3. Open your browser at **`http://localhost:3001`**.
+
+---
+
+### Option 3: 24/7 on Android (Termux — Screen Off, Zero Electricity)
+
+Turn any spare Android phone into a permanent 24/7 Minecraft bot host on your home Wi-Fi:
+
+1. Install **Termux** (from F-Droid).
+2. Install Node.js and Git:
+   ```bash
+   pkg update && pkg install -y nodejs git
+   ```
+3. Enable background wake lock (prevents Android from sleeping when screen is off):
+   ```bash
+   termux-wake-lock
+   ```
+4. Set Termux battery usage to **"Unrestricted"** in Android Settings.
+5. Clone and start with PM2:
+   ```bash
+   git clone https://github.com/nilesh0199/MinecraftBot.git
+   cd MinecraftBot
+   npm run build
+   npm install -g pm2
+   pm2 start index.js --name "craftbot"
+   pm2 save
+   ```
+6. Access the dashboard from your laptop's browser over home Wi-Fi at `http://<phone-ip>:3001`!
+
+---
+
+### Option 4: Dedicated Bot Hosting / VPS (No Credit Card)
+
+* **Bot-Hosting.net**: Free Pterodactyl-based Node.js bot hosting (no credit card required). Upload files, set `node index.js`, and run 24/7.
+* **Indian VPS via UPI**: Services like HostPeppy (72-hr trial) or AIC Cloud (₹99/mo) provide dedicated Ubuntu instances with full root access and instant UPI billing.
+* **Aternos Tip**: When connecting to Aternos, use the **DynIP** (`.aternos.host`) found under the **"Connect"** button to bypass front-end reverse proxy recycling!
 
 ---
 
