@@ -7,7 +7,7 @@
 [![Zero Auth](https://img.shields.io/badge/Access-Zero--Auth%20Public%20Dashboard-orange)](#)
 [![Keep Alive](https://img.shields.io/badge/UptimeRobot-Autonomous%20Bot%20Revive-purple)](#)
 
-A full-stack, headless Minecraft AFK bot platform with an authentic **Minecraft-themed web dashboard** designed for 24/7 continuous cloud operation. Keep your mob grinders running, crop farms growing, and chunks loaded without keeping your personal computer turned on!
+A full-stack, headless Minecraft AFK bot platform with an authentic **Minecraft-themed web dashboard** designed for 24/7 continuous cloud operation. Keep your mob grinders running, crop farms growing, and chunks loaded without keeping your personal computer turned on!!
 
 ---
 
